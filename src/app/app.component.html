@@ -1,0 +1,841 @@
+<section class="home-screen" *ngIf="showHome">
+  <div class="home-shell">
+    <header class="home-header">
+      <img src="assets/branding/bsic-logo.png" alt="BSIC" class="home-logo" />
+      <div class="home-title-wrap">
+        <h1>Rapprochement BSIC</h1>
+        <p>Selectionnez un module de pilotage.</p>
+      </div>
+    </header>
+
+    <div class="home-operator-grid">
+      <button class="home-operator-card moov" (click)="enterOperator('MOOV')">
+        <span class="operator-name">Moov Money</span>
+        <span class="operator-action">Entrer dans le module</span>
+      </button>
+      <button class="home-operator-card orange-op" (click)="enterOperator('ORANGE')">
+        <span class="operator-name">Orange Money</span>
+        <span class="operator-action">Entrer dans le module</span>
+      </button>
+      <button class="home-operator-card orange-op" (click)="enterAccounting()">
+        <span class="operator-name">Comptabilisation</span>
+        <span class="operator-action">Carthago / AMPLITUDE</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<div class="layout" *ngIf="!showHome">
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="assets/branding/bsic-logo.png" alt="BSIC" class="brand-logo" />
+      <div>
+        <strong>MY BSIC</strong>
+        <small>Reconciliation</small>
+      </div>
+    </div>
+
+    <section class="card operator-card menu-card">
+      <h3>Choix Operateur</h3>
+      <p class="section-subtitle">Selectionne l'operateur a piloter.</p>
+      <div class="operator-switch">
+        <button class="operator-btn moov" [class.active]="selectedOperator === 'MOOV'" (click)="setOperator('MOOV')">
+          <span class="dot"></span>
+          <span>Moov</span>
+        </button>
+        <button class="operator-btn orange-op" [class.active]="selectedOperator === 'ORANGE'" (click)="setOperator('ORANGE')">
+          <span class="dot"></span>
+          <span>Orange</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card upload-launch-card" *ngIf="activePage === 'RECONCILIATION'">
+      <h3>Upload Fichiers</h3>
+      <p class="section-subtitle">Importer Banque et {{ activeOperatorLabel }} depuis un pop-up.</p>
+      <button class="primary full-action" type="button" (click)="openUploadDialog('RECONCILIATION')">Ouvrir le pop-up</button>
+      <p class="ok" *ngIf="message">{{ message }}</p>
+      <p class="error" *ngIf="error">{{ error }}</p>
+    </section>
+
+    <section class="card cleanup-side" *ngIf="activePage === 'RECONCILIATION'">
+      <h3>Nettoyage Import</h3>
+      <label>
+        Source
+        <select [(ngModel)]="cleanupSourceType">
+          <option [ngValue]="'BANQUE'">BANQUE</option>
+          <option *ngIf="selectedOperator === 'MOOV'" [ngValue]="'MOOV'">MOOV</option>
+          <option *ngIf="selectedOperator === 'ORANGE'" [ngValue]="'ORANGE'">ORANGE</option>
+        </select>
+      </label>
+      <label>
+        Date metier
+        <input type="date" [(ngModel)]="cleanupBusinessDate" />
+      </label>
+      <div class="actions">
+        <button class="secondary" (click)="previewCleanupByDate()" [disabled]="loading">Previsualiser</button>
+        <button class="orange" (click)="cleanupImportsByDate()" [disabled]="loading">Nettoyer en base</button>
+        <button class="orange" (click)="cleanupAllBySource()" [disabled]="loading">Vider toute la source</button>
+      </div>
+      <div class="retention-result" *ngIf="cleanupPreview">
+        <small>Source: {{ cleanupPreview.sourceType }}</small>
+        <small>Date: {{ cleanupPreview.businessDate }}</small>
+        <small>Imports cibles: {{ cleanupPreview.candidateImports }}</small>
+        <small>Transactions cibles: {{ cleanupPreview.candidateTransactions }}</small>
+        <small>Runs impactes: {{ cleanupPreview.impactedRuns }}</small>
+        <small>Resultats impactes: {{ cleanupPreview.impactedResults }}</small>
+      </div>
+    </section>
+    <section class="card upload-launch-card" *ngIf="activePage === 'ACCOUNTING'">
+      <h3>Importer l'extrait comptable AMPLITUDE</h3>
+      <p class="section-subtitle">Chargez le fichier AMPLITUDE qui contient les ecritures comptables CBS utilisees pour verifier les operations Carthago Moov ou Orange.</p>
+      <div class="upload-guidance">
+        <span>Fichier attendu: CSV, XLS ou XLSX</span>
+        <span>Colonnes controlees: date compta, date valeur, reference operation, telephone, compte et credit</span>
+        <span>Apres import: choisissez Moov ou Orange dans la page Comptabilisation pour lancer le controle separe.</span>
+      </div>
+      <button class="primary full-action" type="button" (click)="openUploadDialog('ACCOUNTING')">Importer un fichier AMPLITUDE</button>
+      <p class="ok" *ngIf="message">{{ message }}</p>
+      <p class="error" *ngIf="error">{{ error }}</p>
+    </section>
+
+    <section class="card cleanup-side" *ngIf="activePage === 'ACCOUNTING'">
+      <h3>Nettoyage AMPLITUDE</h3>
+      <label>Mode
+        <select [(ngModel)]="amplitudeCleanupMode">
+          <option [ngValue]="'DAILY'">Journalier</option>
+          <option [ngValue]="'WEEKLY'">Hebdomadaire</option>
+          <option [ngValue]="'RANGE'">Entre deux dates</option>
+          <option [ngValue]="'ALL'">Tout vider</option>
+        </select>
+      </label>
+      <label *ngIf="amplitudeCleanupMode === 'DAILY'">Date <input type="date" [(ngModel)]="amplitudeCleanupDate" /></label>
+      <label *ngIf="amplitudeCleanupMode === 'WEEKLY'">Date reference semaine <input type="date" [(ngModel)]="amplitudeCleanupWeekReferenceDate" /></label>
+      <label *ngIf="amplitudeCleanupMode === 'RANGE'">Date debut <input type="date" [(ngModel)]="amplitudeCleanupDateFrom" /></label>
+      <label *ngIf="amplitudeCleanupMode === 'RANGE'">Date fin <input type="date" [(ngModel)]="amplitudeCleanupDateTo" /></label>
+      <div class="actions column">
+        <button class="orange" (click)="runAmplitudeCleanup()" [disabled]="loading">Lancer nettoyage AMPLITUDE</button>
+      </div>
+      <div class="retention-result" *ngIf="amplitudeCleanupResult">
+        <small>Mode: {{ amplitudeCleanupResult.mode }}</small>
+        <small *ngIf="amplitudeCleanupResult.dateFrom">Date debut: {{ amplitudeCleanupResult.dateFrom }}</small>
+        <small *ngIf="amplitudeCleanupResult.dateTo">Date fin: {{ amplitudeCleanupResult.dateTo }}</small>
+        <small>Imports supprimes: {{ amplitudeCleanupResult.deletedImports }}</small>
+        <small>Transactions supprimees: {{ amplitudeCleanupResult.deletedTransactions }}</small>
+      </div>
+    </section>
+  </aside>
+
+  <main class="content">
+    <nav class="top-nav-tabs">
+      <button class="tab-btn home-tab" (click)="backToHome()">Accueil</button>
+      <button class="tab-btn" [class.active]="activePage === 'DASHBOARD'" (click)="setPage('DASHBOARD')">Dashboard</button>
+      <button class="tab-btn" [class.active]="activePage === 'RECONCILIATION'" (click)="setPage('RECONCILIATION')">Reconciliation</button>
+      <button class="tab-btn" [class.active]="activePage === 'COMPENSATION'" (click)="setPage('COMPENSATION')">Compensation</button>
+      <button class="tab-btn" [class.active]="activePage === 'ACCOUNTING'" (click)="setPage('ACCOUNTING')">Comptabilisation</button>
+    </nav>
+    <div class="breadcrumb-bar">
+      <span>Accueil</span>
+      <span>/</span>
+      <span *ngIf="activePage === 'DASHBOARD'">Dashboard</span>
+      <span *ngIf="activePage === 'RECONCILIATION'">Reconciliation</span>
+      <span *ngIf="activePage === 'COMPENSATION'">Compensation</span>
+      <span *ngIf="activePage === 'ACCOUNTING'">Comptabilisation</span>
+      <span>/</span>
+      <span>{{ activePage === 'ACCOUNTING' ? accountingOperatorLabel : activeOperatorLabel }}</span>
+    </div>
+    <header class="topbar">
+      <div>
+        <h1 *ngIf="activePage === 'RECONCILIATION'">Reconciliation Banque / {{ activeOperatorLabel }}</h1>
+        <h1 *ngIf="activePage === 'DASHBOARD'">Dashboard Reconciliation / {{ activeOperatorLabel }}</h1>
+        <h1 *ngIf="activePage === 'COMPENSATION'">Compensation / {{ activeOperatorLabel }}</h1>
+        <h1 *ngIf="activePage === 'ACCOUNTING'">Comptabilisation Carthago / AMPLITUDE</h1>
+        <p *ngIf="activePage === 'RECONCILIATION'">Pilotage des imports, runs et resultats de reconciliation.</p>
+        <p *ngIf="activePage === 'DASHBOARD'">Page dediee KPI, montants, timeline et top anomalies.</p>
+        <p *ngIf="activePage === 'COMPENSATION'">Module dedie aux compensations journaliere, hebdomadaire et mensuelle.</p>
+        <p *ngIf="activePage === 'ACCOUNTING'">Controle de comptabilisation CBS a partir des references operation Carthago.</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="ghost" (click)="backToHome()">Accueil</button>
+        <div class="user-dot"></div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="card summary-card" *ngIf="summary && activePage === 'RECONCILIATION'">
+        <div class="kpi-scope">{{ kpiScopeLabel }}</div>
+        <div class="totals">
+          <span>Montant Banque: <b>{{ summary.montantGlobalBanque | number : '1.0-2' }}</b></span>
+          <span>{{ counterpartAmountLabel }}: <b>{{ summary.montantGlobalMoov | number : '1.0-2' }}</b></span>
+          <span>Total Global: <b>{{ globalAmountTotal | number : '1.0-2' }}</b></span>
+          <span>Ecart Global: <b>{{ summary.ecartGlobal | number : '1.0-2' }}</b></span>
+        </div>
+        <div class="quick-filters">
+          <button *ngFor="let q of quickFilters" class="quick-btn" [ngClass]="[q.className, selectedFilter === q.type ? 'active' : '']" (click)="applyQuickFilter(q.type)">
+            <span>{{ q.label }}</span><strong>{{ q.count() }}</strong>
+          </button>
+        </div>
+        <div class="kpis kpi-board">
+          <article class="kpi success kpi-group">
+            <span class="kpi-title">Performance {{ activeOperatorLabel }}</span>
+            <strong>{{ summary.totalMatchOk }}</strong>
+            <small>Matches</small>
+            <div class="kpi-sub"><span>Taux de succes</span><b>{{ successRate | number : '1.1-1' }}%</b></div>
+            <div class="kpi-sub"><span>Taux d'echec global</span><b>{{ failureRate | number : '1.1-1' }}%</b></div>
+          </article>
+          <article class="kpi warning kpi-group">
+            <span class="kpi-title">Ecarts de montant</span>
+            <strong>{{ summary.totalMontantDifferent }}</strong>
+            <small>Lignes en ecart</small>
+            <div class="kpi-sub"><span>Echec des deux cotes</span><b>{{ failureDoubleSideRate | number : '1.1-1' }}%</b></div>
+            <div class="kpi-sub"><span>Debit a tort</span><b>{{ failureDebitRate | number : '1.1-1' }}%</b></div>
+          </article>
+          <article class="kpi danger kpi-group">
+            <span class="kpi-title">Lignes manquantes</span>
+            <strong>{{ missingTotal }}</strong>
+            <small>Total manquants</small>
+            <div class="kpi-sub"><span>Manquants Banque</span><b>{{ summary.totalAbsentBanque }} ({{ missingBankRate | number : '1.1-1' }}%)</b></div>
+            <div class="kpi-sub"><span>Manquants {{ activeOperatorLabel }}</span><b>{{ summary.totalAbsentMoov }} ({{ missingMoovRate | number : '1.1-1' }}%)</b></div>
+          </article>
+          <article class="kpi info kpi-group">
+            <span class="kpi-title">Anomalies metier</span>
+            <strong>{{ summary.totalDoublons }}</strong>
+            <small>Doublons detectes</small>
+            <div class="kpi-sub"><span>Credit sans debit</span><b>{{ summary.totalCreditSansDebit }}</b></div>
+            <div class="kpi-sub"><span>Debit a tort</span><b>{{ summary.totalDebitATort }}</b></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card result-card" *ngIf="summary && activePage === 'RECONCILIATION'">
+        <h2>Resultats Banque / {{ activeOperatorLabel }}</h2>
+        <div class="filters-panel">
+          <div class="filters-head">
+            <h3>Recherche et tri</h3>
+            <button class="ghost" (click)="resetResultFilters()">Reinitialiser les filtres</button>
+          </div>
+          <div class="filters-grid">
+            <label class="filter-field">Statut <select [(ngModel)]="selectedFilter" (change)="onFilterChange()"><option *ngFor="let f of filterOptions" [ngValue]="f">{{ f }}</option></select></label>
+            <label class="filter-field">Type operation <select [(ngModel)]="operationFilter" (change)="onOperationFiltersChange()"><option *ngFor="let o of operationOptions" [ngValue]="o">{{ operationOptionLabels[o] }}</option></select></label>
+            <label class="filter-field">Cle partagee <input type="text" [(ngModel)]="transactionKeyFilter" (input)="onTransactionKeyFilterChange()" placeholder="Coller la cle..." /></label>
+            <label class="filter-field">Numero telephone <input type="text" [(ngModel)]="phoneFilter" (input)="onPhoneFilterChange()" placeholder="Ex: 226XXXXXXXX" /></label>
+            <label class="filter-field">Numero compte <input type="text" [(ngModel)]="accountNumberFilter" (input)="onAccountNumberFilterChange()" placeholder="Ex: 1234567890" /></label>
+            <label class="filter-field">Mode date operation <select [(ngModel)]="operationDateMode" (change)="onOperationFiltersChange()"><option [ngValue]="'SINGLE'">Date unique</option><option [ngValue]="'RANGE'">Entre deux dates</option></select></label>
+            <label class="filter-field" *ngIf="operationDateMode === 'SINGLE'">Date operation <input type="date" [(ngModel)]="operationDateFilter" (change)="onOperationFiltersChange()" /></label>
+            <label class="filter-field" *ngIf="operationDateMode === 'RANGE'">Date debut <input type="date" [(ngModel)]="operationDateFrom" (change)="onOperationFiltersChange()" /></label>
+            <label class="filter-field" *ngIf="operationDateMode === 'RANGE'">Date fin <input type="date" [(ngModel)]="operationDateTo" (change)="onOperationFiltersChange()" /></label>
+          </div>
+        </div>
+        <div class="table-tools">
+          <div class="left-tools"><button class="tool excel" (click)="exportFilteredResultsExcel()">Excel</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cle</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Reference operation</th>
+                <th>Nom complet</th>
+                <th>MSISDN (Telephone)</th>
+                <th>Numero de compte</th>
+                <th>transactionDate (Banque)</th>
+                <th>date ({{ activeOperatorLabel }})</th>
+                <th>Montant Banque</th>
+                <th>{{ counterpartAmountLabel }}</th>
+                <th>Ecart</th>
+                <th>Statut Banque</th>
+                <th>{{ counterpartStatusLabel }}</th>
+                <th>Motif rejet banque</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of paginatedResults" [class.soft-failure-row]="isSoftFailureRow(row)">
+                <td>{{ row.transactionKey }}</td>
+                <td><span class="status-pill" [ngClass]="statusClass(row.resultType)"><span class="status-icon">{{ statusIcon(row.resultType) }}</span>{{ statusLabel(row.resultType) }}</span></td>
+                <td>{{ direction(row) }}</td>
+                <td>{{ bankOperationReference(row) }}</td>
+                <td>{{ bankFullName(row) }}</td>
+                <td>{{ bankMsisdn(row) }}</td>
+                <td>{{ bankAccountNumber(row) }}</td>
+                <td>{{ bankDate(row) }}</td>
+                <td>{{ counterpartDate(row) }}</td>
+                <td>{{ row.bankAmount ?? '-' }}</td>
+                <td>{{ row.moovAmount ?? '-' }}</td>
+                <td>{{ row.amountDifference ?? '-' }}</td>
+                <td><span class="status-pill" [ngClass]="statusClass(row.bankStatusRaw)"><span class="status-icon">{{ statusIcon(row.bankStatusRaw) }}</span>{{ statusLabel(row.bankStatusRaw) }}</span></td>
+                <td><span class="status-pill" [ngClass]="statusClass(row.moovStatusRaw)"><span class="status-icon">{{ statusIcon(row.moovStatusRaw) }}</span>{{ statusLabel(row.moovStatusRaw) }}</span></td>
+                <td>{{ bankRejectReason(row) }}</td>
+              </tr>
+              <tr *ngIf="filteredResults.length === 0"><td colspan="15">Aucune ligne trouvee pour {{ activeOperatorLabel }}.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-pagination" *ngIf="filteredResults.length > 0">
+          <button class="page-btn" (click)="goToPage(currentPage - 1)" [disabled]="currentPage <= 1">Precedent</button>
+          <span>Page {{ currentPage }} / {{ totalPages }} ({{ filteredResults.length }} lignes)</span>
+          <button class="page-btn" (click)="goToPage(currentPage + 1)" [disabled]="currentPage >= totalPages">Suivant</button>
+        </div>
+
+      </section>
+
+      <section class="card dashboard-card full-page" *ngIf="dashboardSummary && activePage === 'DASHBOARD'">
+        <h2>Dashboard KPI {{ activeOperatorLabel }}</h2>
+        <div class="kpi-filter-bar">
+          <label>Portee KPI (date transaction) <select [(ngModel)]="periodMode"><option value="SINGLE_DAY">Jour unique</option><option value="RANGE">Entre deux dates</option></select></label>
+          <label *ngIf="periodMode === 'SINGLE_DAY'">Jour transaction <input type="date" [(ngModel)]="singleDay" /></label>
+          <label *ngIf="periodMode === 'RANGE'">Date transaction debut <input type="date" [(ngModel)]="dateFrom" /></label>
+          <label *ngIf="periodMode === 'RANGE'">Date transaction fin <input type="date" [(ngModel)]="dateTo" /></label>
+          <button class="primary" (click)="applyKpiFilters()" [disabled]="loading">Appliquer</button>
+          <button class="quick-range reset" (click)="resetHistoryFilter()">Reinitialiser</button>
+        </div>
+        <p class="kpi-scope">
+          <span *ngIf="dashboardSummary.periodType === 'DAY'">Jour transaction: {{ dashboardSummary.businessDate }}</span>
+          <span *ngIf="dashboardSummary.periodType === 'RANGE'">Periode transaction: {{ dashboardSummary.dateFrom }} -> {{ dashboardSummary.dateTo }}</span>
+        </p>
+        <div class="dashboard-kpi-strip">
+          <article class="dashboard-kpi-tile" *ngFor="let tile of dashboardKpiTiles" [ngClass]="tile.tone">
+            <span class="label">{{ tile.label }}</span>
+            <strong>{{ tile.value }}</strong>
+            <small *ngIf="tile.hint">{{ tile.hint }}</small>
+          </article>
+        </div>
+
+        <div class="dashboard-block reporting-block">
+          <div class="reporting-head">
+            <h3>Reporting Managerial (Journalier / Hebdo / Mensuel)</h3>
+            <div class="reporting-actions">
+              <label>Periode
+                <select [(ngModel)]="reportingPeriodType">
+                  <option [ngValue]="''">Choisir...</option>
+                  <option value="DAY">Jour</option>
+                  <option value="WEEK">Semaine</option>
+                  <option value="MONTH">Mois</option>
+                </select>
+              </label>
+              <label>Date reference <input type="date" [(ngModel)]="reportingReferenceDate" /></label>
+              <button class="primary" (click)="loadReportingSummary()" [disabled]="reportingLoading || !reportingPeriodType || !reportingReferenceDate">Generer</button>
+              <button class="ghost" (click)="resetReportingFilters()">Reinitialiser</button>
+              <button class="secondary" (click)="exportReportingExcel()" [disabled]="!reportingSummary">Excel</button>
+              <button class="secondary" (click)="exportReportingPdf()" [disabled]="!reportingSummary">PDF</button>
+            </div>
+          </div>
+          <p class="kpi-scope">KPI reporting bases sur la date de transaction (et non la date metier).</p>
+
+          <div class="dashboard-kpi-strip" *ngIf="reportingKpiTiles.length">
+            <article class="dashboard-kpi-tile" *ngFor="let tile of reportingKpiTiles" [ngClass]="tile.tone">
+              <span class="label">{{ tile.label }}</span>
+              <strong>{{ tile.value }}</strong>
+              <small *ngIf="tile.hint">{{ tile.hint }}</small>
+            </article>
+          </div>
+
+          <div class="dashboard-grid" *ngIf="reportingSummary as report">
+            <div class="dashboard-block">
+              <h3>Distribution Reporting</h3>
+              <button
+                type="button"
+                class="dist-row dist-action"
+                *ngFor="let item of report.distribution"
+                [class.active]="selectedReportingResultType === item.resultType"
+                (click)="selectReportingResultType(item.resultType)">
+                <span><span class="status-pill compact" [ngClass]="statusClass(item.resultType)"><span class="status-icon">{{ statusIcon(item.resultType) }}</span>{{ statusLabel(item.resultType) }}</span></span>
+                <div class="bar-wrap">
+                  <div class="bar dist" [style.width.%]="(item.count * 100) / (report.kpis.totalTransactions || 1)"></div>
+                </div>
+                <b>{{ item.count }}</b>
+              </button>
+            </div>
+            <div class="dashboard-block">
+              <h3>Journalier</h3>
+              <div class="timeline-row" *ngFor="let d of report.dailyBreakdown">
+                <span>{{ d.businessDate }}</span>
+                <div class="bar-wrap"><div class="bar tx" [style.width.%]="(d.totalTransactions * 100) / (report.kpis.picVolumeJournalier.totalTransactions || 1)"></div></div>
+                <small>{{ d.totalTransactions }}</small>
+                <small>{{ d.successRate | number : '1.0-2' }}%</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-block reporting-details" *ngIf="reportingSummary as report">
+            <div class="reporting-details-head">
+              <h3>{{ reportingDetailsTitle }}</h3>
+              <button class="ghost" *ngIf="selectedReportingResultType !== 'ALL'" (click)="clearReportingResultType()">Tout afficher</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Cle</th>
+                    <th>Type</th>
+                    <th>Direction</th>
+                    <th>Statut Banque</th>
+                    <th>Statut {{ activeOperatorLabel }}</th>
+                    <th>Montant Banque</th>
+                    <th>Montant {{ activeOperatorLabel }}</th>
+                    <th>Ecart</th>
+                    <th>Raison</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of filteredReportingTransactionDetails">
+                    <td>{{ row.businessDate }}</td>
+                    <td>{{ row.transactionKey }}</td>
+                    <td><span class="status-pill compact" [ngClass]="statusClass(row.resultType)"><span class="status-icon">{{ statusIcon(row.resultType) }}</span>{{ statusLabel(row.resultType) }}</span></td>
+                    <td>{{ row.direction || '-' }}</td>
+                    <td><span class="status-pill compact" [ngClass]="statusClass(row.bankStatus)"><span class="status-icon">{{ statusIcon(row.bankStatus) }}</span>{{ statusLabel(row.bankStatus) }}</span></td>
+                    <td><span class="status-pill compact" [ngClass]="statusClass(row.operatorStatus)"><span class="status-icon">{{ statusIcon(row.operatorStatus) }}</span>{{ statusLabel(row.operatorStatus) }}</span></td>
+                    <td>{{ row.bankAmount ?? '-' }}</td>
+                    <td>{{ row.operatorAmount ?? '-' }}</td>
+                    <td>{{ row.amountDifference ?? '-' }}</td>
+                    <td>{{ row.reason || '-' }}</td>
+                  </tr>
+                  <tr *ngIf="filteredReportingTransactionDetails.length === 0">
+                    <td colspan="10">Aucune operation pour ce filtre.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="dashboard-block">
+            <h3>Distribution des resultats</h3>
+            <div class="dist-row" *ngFor="let item of dashboardDistribution">
+              <span><span class="status-pill compact" [ngClass]="statusClass(item.resultType)"><span class="status-icon">{{ statusIcon(item.resultType) }}</span>{{ statusLabel(item.resultType) }}</span></span>
+              <div class="bar-wrap">
+                <div class="bar dist" [style.width.%]="(item.count * 100) / maxDistributionCount"></div>
+              </div>
+              <b>{{ item.count }}</b>
+            </div>
+          </div>
+
+          <div class="dashboard-block">
+            <h3>Timeline Horaire</h3>
+            <div class="timeline-row" *ngFor="let point of dashboardTimeline">
+              <span>{{ point.hour }}</span>
+              <div class="bar-wrap">
+                <div class="bar tx" [style.width.%]="(point.totalTransactions * 100) / maxTimelineTransactions"></div>
+              </div>
+              <small>{{ point.totalTransactions }}</small>
+              <div class="bar-wrap anomaly">
+                <div class="bar an" [style.width.%]="(point.anomalies * 100) / maxTimelineAnomalies"></div>
+              </div>
+              <small>{{ point.anomalies }}</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="dashboard-block" *ngIf="dashboardDataQuality">
+            <h3>Qualite des donnees</h3>
+            <div class="metric-list">
+              <div class="metric-row" *ngFor="let item of dashboardQualityMetrics">
+                <span>{{ item.label }}</span>
+                <b>{{ item.value }}</b>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-block" *ngIf="dashboardAmounts">
+            <h3>Montants</h3>
+            <div class="metric-list">
+              <div class="metric-row" *ngFor="let item of dashboardAmountMetrics" [ngClass]="item.tone">
+                <span>{{ item.label }}</span>
+                <b>{{ item.value }}</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-block">
+          <h3>Top anomalies</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Statut Banque</th>
+                  <th>Statut {{ activeOperatorLabel }}</th>
+                  <th>Montant Banque</th>
+                  <th>Montant {{ activeOperatorLabel }}</th>
+                  <th>Ecart</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of dashboardTopAnomalies">
+                  <td>{{ row.transactionKey }}</td>
+                  <td>{{ row.businessDate }}</td>
+                  <td><span class="status-pill" [ngClass]="statusClass(row.resultType)"><span class="status-icon">{{ statusIcon(row.resultType) }}</span>{{ statusLabel(row.resultType) }}</span></td>
+                  <td><span class="status-pill" [ngClass]="statusClass(row.bankStatusRaw)"><span class="status-icon">{{ statusIcon(row.bankStatusRaw) }}</span>{{ statusLabel(row.bankStatusRaw) }}</span></td>
+                  <td><span class="status-pill" [ngClass]="statusClass(row.operatorStatusRaw)"><span class="status-icon">{{ statusIcon(row.operatorStatusRaw) }}</span>{{ statusLabel(row.operatorStatusRaw) }}</span></td>
+                  <td>{{ row.bankAmount ?? '-' }}</td>
+                  <td>{{ row.operatorAmount ?? '-' }}</td>
+                  <td>{{ row.amountDifference ?? '-' }}</td>
+                </tr>
+                <tr *ngIf="dashboardTopAnomalies.length === 0">
+                  <td colspan="8">Aucune anomalie critique.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <section class="card dashboard-card full-page" *ngIf="activePage === 'COMPENSATION'">
+        <h2>Compensation {{ activeOperatorLabel }}</h2>
+        <div class="kpi-filter-bar">
+          <label>
+            Vue
+            <select [(ngModel)]="compensationMode">
+              <option [ngValue]="'DAILY'">Journaliere</option>
+              <option [ngValue]="'WEEKLY'">Semaine (plage)</option>
+              <option [ngValue]="'MONTHLY'">Mois (annee en cours)</option>
+            </select>
+          </label>
+
+          <label *ngIf="compensationMode === 'DAILY'">
+            Mode
+            <select [(ngModel)]="compensationDateMode">
+              <option [ngValue]="'SINGLE'">Jour unique</option>
+              <option [ngValue]="'RANGE'">Entre deux dates</option>
+            </select>
+          </label>
+
+          <label *ngIf="compensationMode === 'DAILY' && compensationDateMode === 'SINGLE'">Date transaction <input type="date" [(ngModel)]="compensationDate" /></label>
+          <label *ngIf="compensationMode === 'DAILY' && compensationDateMode === 'RANGE'">Date debut <input type="date" [(ngModel)]="compensationDateFrom" /></label>
+          <label *ngIf="compensationMode === 'DAILY' && compensationDateMode === 'RANGE'">Date fin <input type="date" [(ngModel)]="compensationDateTo" /></label>
+
+          <label *ngIf="compensationMode === 'WEEKLY'">Date reference semaine <input type="date" [(ngModel)]="compensationWeekReferenceDate" /></label>
+
+          <label *ngIf="compensationMode === 'MONTHLY'">Mois
+            <select [(ngModel)]="compensationMonth">
+              <option [ngValue]="1">Janvier</option><option [ngValue]="2">Fevrier</option><option [ngValue]="3">Mars</option>
+              <option [ngValue]="4">Avril</option><option [ngValue]="5">Mai</option><option [ngValue]="6">Juin</option>
+              <option [ngValue]="7">Juillet</option><option [ngValue]="8">Aout</option><option [ngValue]="9">Septembre</option>
+              <option [ngValue]="10">Octobre</option><option [ngValue]="11">Novembre</option><option [ngValue]="12">Decembre</option>
+            </select>
+          </label>
+
+          <button class="primary" (click)="loadCompensation()" [disabled]="!canLoadCompensation">Appliquer</button>
+        </div>
+
+        <div class="totals" *ngIf="compensationPeriod">
+          <span>Periode: <b>{{ compensationPeriod.label }}</b></span>
+          <span *ngIf="compensationMode === 'WEEKLY'">Semaine: <b>{{ compensationWeekFrom }} -> {{ compensationWeekTo }}</b></span>
+          <span>Nb tx Operateur: <b>{{ compensationPeriod.totalOperatorSuccessCount }}</b></span>
+          <span>Nb tx Banque: <b>{{ compensationPeriod.totalBankSuccessCount }}</b></span>
+          <span>Montant Operateur: <b>{{ compensationPeriod.totalOperatorSuccessAmount | number : '1.0-2' }}</b></span>
+          <span>Montant Banque: <b>{{ compensationPeriod.totalBankSuccessAmount | number : '1.0-2' }}</b></span>
+          <span>Ecart: <b>{{ compensationPeriod.totalDifference | number : '1.0-2' }}</b></span>
+          <span>Decision: <b><span class="status-pill compact" [ngClass]="statusClass(compensationPeriod.decision)"><span class="status-icon">{{ statusIcon(compensationPeriod.decision) }}</span>{{ statusLabel(compensationPeriod.decision) }}</span></b></span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Operateur</th><th>Nb tx Operateur</th><th>Nb tx Banque</th><th>Montant reussi Operateur</th><th>Montant reussi Banque</th><th>Ecart</th><th>Decision</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of compensationRows">
+                <td>{{ row.businessDate }}</td><td>{{ row.operator }}</td>
+                <td>{{ row.operatorSuccessCount }}</td>
+                <td>{{ row.bankSuccessCount }}</td>
+                <td>{{ row.operatorSuccessAmount | number : '1.0-2' }}</td>
+                <td>{{ row.bankSuccessAmount | number : '1.0-2' }}</td>
+                <td>{{ row.difference | number : '1.0-2' }}</td>
+                <td><span class="status-pill" [ngClass]="statusClass(row.decision)"><span class="status-icon">{{ statusIcon(row.decision) }}</span>{{ statusLabel(row.decision) }}</span></td>
+              </tr>
+              <tr *ngIf="compensationRows.length === 0"><td colspan="8">Aucune donnee de compensation.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="dashboard-block">
+          <h3>Ecarts de Compensation</h3>
+          <div class="kpi-filter-bar accounting-filter-bar">
+            <label>Filtre risque
+              <select [(ngModel)]="compensationRiskFilter">
+                <option [ngValue]="'ALL'">Tous</option>
+                <option [ngValue]="'ABSENT_OPERATEUR'">Absent operateur</option>
+                <option [ngValue]="'ABSENT_BANQUE'">Absent banque</option>
+                <option [ngValue]="'ECHEC_DEUX_COTES'">Echec des deux cotes</option>
+              </select>
+            </label>
+          </div>
+          <div class="dashboard-kpi-strip">
+            <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Absent operateur</span><strong>{{ riskAbsentOperatorCount }}</strong><small>Banque: {{ riskAbsentOperatorBankAmount | number : '1.0-2' }}</small><small>{{ activeOperatorLabel }}: {{ riskAbsentOperatorOperatorAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Absent banque</span><strong>{{ riskAbsentBankCount }}</strong><small>Banque: {{ riskAbsentBankBankAmount | number : '1.0-2' }}</small><small>{{ activeOperatorLabel }}: {{ riskAbsentBankOperatorAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile kpi-soft-yellow"><span class="label">Echec 2 cotes</span><strong>{{ riskEchecDeuxCotesCount }}</strong><small>Banque: {{ riskEchecDeuxCotesBankAmount | number : '1.0-2' }}</small><small>{{ activeOperatorLabel }}: {{ riskEchecDeuxCotesOperatorAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile accounting-total"><span class="label">Total risques</span><strong>{{ riskTotalCount }}</strong></article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th><th>Cle</th><th>Reference operation</th><th>Type</th><th>Tel Operateur</th><th>Statut Banque</th><th>Statut Operateur</th><th>Montant Banque</th><th>Montant Operateur</th><th>Ecart</th><th>Motif</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of filteredCompensationDiscrepancies">
+                  <td>{{ row.businessDate }}</td>
+                  <td>{{ row.transactionKey }}</td>
+                  <td>{{ row.operationReference || '-' }}</td>
+                  <td><span class="status-pill" [ngClass]="statusClass(row.resultType)"><span class="status-icon">{{ statusIcon(row.resultType) }}</span>{{ statusLabel(row.resultType) }}</span></td>
+                  <td>{{ row.operatorPhoneNumber || '-' }}</td>
+                  <td><span class="status-pill" [ngClass]="statusClass(row.bankStatusRaw)"><span class="status-icon">{{ statusIcon(row.bankStatusRaw) }}</span>{{ statusLabel(row.bankStatusRaw) }}</span></td>
+                  <td><span class="status-pill" [ngClass]="statusClass(row.operatorStatusRaw)"><span class="status-icon">{{ statusIcon(row.operatorStatusRaw) }}</span>{{ statusLabel(row.operatorStatusRaw) }}</span></td>
+                  <td>{{ row.bankAmount ?? '-' }}</td>
+                  <td>{{ row.operatorAmount ?? '-' }}</td>
+                  <td>{{ row.amountDifference ?? '-' }}</td>
+                  <td>{{ row.reason || '-' }}</td>
+                </tr>
+                <tr *ngIf="filteredCompensationDiscrepancies.length === 0"><td colspan="11">Aucun ecart de compensation sur la periode.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card dashboard-card full-page accounting-page" *ngIf="activePage === 'ACCOUNTING'">
+        <h2>Controle de comptabilisation {{ accountingOperatorLabel }}</h2>
+        <div class="kpi-filter-bar accounting-filter-bar">
+          <label>Operateur
+            <select [(ngModel)]="accountingOperator" (ngModelChange)="loadAccountingCheck()">
+              <option [ngValue]="'MOOV'">Moov</option>
+              <option [ngValue]="'ORANGE'">Orange</option>
+            </select>
+          </label>
+          <label>Vue
+            <select [(ngModel)]="accountingMode">
+              <option [ngValue]="'DAILY'">Journalier</option>
+              <option [ngValue]="'WEEKLY'">Hebdomadaire</option>
+              <option [ngValue]="'MONTHLY'">Mensuel</option>
+              <option [ngValue]="'RANGE'">Entre deux dates</option>
+            </select>
+          </label>
+          <label *ngIf="accountingMode === 'DAILY'">Date <input type="date" [(ngModel)]="accountingDate" /></label>
+          <label *ngIf="accountingMode === 'WEEKLY'">Date reference semaine <input type="date" [(ngModel)]="accountingWeekReferenceDate" /></label>
+          <label *ngIf="accountingMode === 'RANGE'">Date debut <input type="date" [(ngModel)]="accountingDateFrom" /></label>
+          <label *ngIf="accountingMode === 'RANGE'">Date fin <input type="date" [(ngModel)]="accountingDateTo" /></label>
+          <label *ngIf="accountingMode === 'MONTHLY'">Mois
+            <select [(ngModel)]="accountingMonth">
+              <option [ngValue]="1">Janvier</option><option [ngValue]="2">Fevrier</option><option [ngValue]="3">Mars</option>
+              <option [ngValue]="4">Avril</option><option [ngValue]="5">Mai</option><option [ngValue]="6">Juin</option>
+              <option [ngValue]="7">Juillet</option><option [ngValue]="8">Aout</option><option [ngValue]="9">Septembre</option>
+              <option [ngValue]="10">Octobre</option><option [ngValue]="11">Novembre</option><option [ngValue]="12">Decembre</option>
+            </select>
+          </label>
+          <button class="primary" (click)="loadAccountingCheck()">Appliquer</button>
+          <button class="secondary" (click)="exportAccountingKpiCsv()">Exporter KPI CSV</button>
+          <button class="secondary" (click)="exportAccountingKpiPdf()">Exporter KPI PDF</button>
+        </div>
+        <div class="dashboard-kpi-strip">
+          <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Comptabilise</span><strong>{{ comptabiliseCount }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Non Comptabilise</span><strong>{{ nonComptabiliseCount }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Operations a risque</span><strong>{{ accountingRiskCount }}</strong></article>
+          <article class="dashboard-kpi-tile accounting-total"><span class="label">Total alloue {{ accountingOperatorLabel }}</span><strong>{{ accountingRows.length }}</strong></article>
+        </div>
+        <div class="kpi-filter-bar accounting-filter-bar">
+          <label>Statut
+            <select [(ngModel)]="accountingStatusFilter">
+              <option [ngValue]="'ALL'">Tous</option>
+              <option [ngValue]="'COMPTABILISE'">Comptabilise</option>
+              <option [ngValue]="'NON_COMPTABILISE'">Non comptabilise</option>
+              <option [ngValue]="'A_RISQUE'">A risque</option>
+            </select>
+          </label>
+          <label>Tel <input type="text" [(ngModel)]="accountingSearchPhone" placeholder="Recherche telephone" /></label>
+          <label>Compte <input type="text" [(ngModel)]="accountingSearchAccount" placeholder="Recherche compte" /></label>
+          <label>Reference <input type="text" [(ngModel)]="accountingSearchReference" placeholder="Recherche reference" /></label>
+          <label>Transaction ID <input type="text" [(ngModel)]="accountingSearchTransactionId" placeholder="Recherche transaction" /></label>
+        </div>
+        <div class="dashboard-kpi-strip" *ngIf="accountingKpi as k">
+          <article class="dashboard-kpi-tile kpi-soft-green">
+            <span class="label">Volume Carthago alloue {{ accountingOperatorLabel }}</span>
+            <strong>{{ k.totalTransactions }}</strong>
+            <small>Montant: {{ k.totalAmount | number : '1.0-2' }}</small>
+          </article>
+          <article class="dashboard-kpi-tile kpi-soft-green">
+            <span class="label">Operations comptabilisees</span>
+            <strong>{{ k.comptabilizedTransactions }}</strong>
+            <small>Montant: {{ k.comptabilizedAmount | number : '1.0-2' }}</small>
+            <small>Taux nb: {{ k.comptabilizationRateCount | number : '1.0-2' }}%</small>
+            <small>Taux montant: {{ k.comptabilizationRateAmount | number : '1.0-2' }}%</small>
+          </article>
+          <article class="dashboard-kpi-tile kpi-soft-red">
+            <span class="label">Operations non comptabilisees</span>
+            <strong>{{ k.nonComptabilizedTransactions }}</strong>
+            <small>Montant: {{ k.nonComptabilizedAmount | number : '1.0-2' }}</small>
+            <small>Taux: {{ k.nonComptabilizationRateCount | number : '1.0-2' }}%</small>
+            <small>Montant a risque: {{ k.amountAtRisk | number : '1.0-2' }}</small>
+          </article>
+          <article class="dashboard-kpi-tile kpi-soft-orange">
+            <span class="label">Ecart financier</span>
+            <strong>{{ k.netGapAmount | number : '1.0-2' }}</strong>
+            <small>Ecart absolu total: {{ k.absoluteGapAmount | number : '1.0-2' }}</small>
+            <small>Tx avec ecart: {{ k.transactionsWithGapCount }}</small>
+            <small>Montant total ecarts: {{ k.totalGapAmount | number : '1.0-2' }}</small>
+          </article>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr>
+              <th>Date compta</th><th>Date valeur</th><th>Tel AMPLITUDE</th><th>Tel Carthago {{ accountingOperatorLabel }}</th><th>Reference operation</th><th>Transaction ID</th><th>Date operation</th><th>Montant Carthago</th><th>Credit AMPLITUDE</th><th>Compte</th><th>Statut</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr *ngFor="let row of filteredAccountingRows">
+              <td>{{ row.accountingDateRaw || '-' }}</td>
+              <td>{{ row.valueDateRaw || '-' }}</td>
+              <td>{{ row.phoneNumber || '-' }}</td>
+              <td>{{ row.bankPhoneNumber || '-' }}</td>
+              <td>{{ row.operationReference || '-' }}</td>
+              <td>{{ row.transactionId }}</td>
+              <td>{{ row.operationDate || '-' }}</td>
+              <td>{{ row.amount ?? '-' }}</td>
+              <td>{{ row.amplitudeCredit ?? '-' }}</td>
+              <td>{{ row.accountNumber || '-' }}</td>
+              <td>
+                <span class="status-pill" [ngClass]="statusClass(row.status)"><span class="status-icon">{{ statusIcon(row.status) }}</span>{{ statusLabel(row.status) }}</span>
+              </td>
+            </tr>
+            <tr *ngIf="filteredAccountingRows.length === 0"><td colspan="11">Aucune donnee sur la periode.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="upload-modal-backdrop" *ngIf="uploadDialogOpen" (click)="closeUploadDialog()">
+  <section class="upload-modal" (click)="$event.stopPropagation()">
+    <header class="upload-modal-header">
+      <div>
+        <span class="modal-eyebrow">Import fichiers</span>
+        <h2 *ngIf="uploadDialogMode === 'RECONCILIATION'">Importer la journee {{ activeOperatorLabel }}</h2>
+        <h2 *ngIf="uploadDialogMode === 'ACCOUNTING'">Importer AMPLITUDE</h2>
+        <p *ngIf="uploadDialogMode === 'RECONCILIATION'">Preparez les fichiers Banque et operateur avant de lancer le rapprochement.</p>
+        <p *ngIf="uploadDialogMode === 'ACCOUNTING'">Chargez l'extrait AMPLITUDE utilise pour controler la comptabilisation Carthago.</p>
+      </div>
+      <button class="modal-close" type="button" (click)="closeUploadDialog()" [disabled]="loading" aria-label="Fermer">X</button>
+    </header>
+
+    <div class="upload-modal-body" *ngIf="uploadDialogMode === 'RECONCILIATION'">
+      <div class="upload-steps">
+        <section class="upload-step">
+          <div class="step-index">1</div>
+          <div class="step-content">
+            <h3>Contexte de rapprochement</h3>
+            <div class="upload-form-grid">
+              <label>Date des operations a rapprocher <input type="date" [(ngModel)]="businessDate" /></label>
+              <label>Libelle du run <input type="text" [(ngModel)]="runLabel" placeholder="RUN-YYYY-MM-DD" /></label>
+            </div>
+            <div class="context-summary">
+              <span>Canal: <b>{{ activeOperatorLabel }}</b></span>
+              <span>Source Banque: <b>Carthago</b></span>
+              <span>Formats: <b>CSV, XLS, XLSX</b></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="upload-step">
+          <div class="step-index">2</div>
+          <div class="step-content">
+            <h3>Fichiers attendus</h3>
+            <div class="file-drop-grid">
+              <label class="file-drop" [class.ready]="selectedBankFileName">
+                <span class="file-title">Banque Carthago</span>
+                <span class="file-hint">Colonnes cles: TRANSACTIONID_, CDATE_, AMOUNT_, ALLOCATIONSTATUS_</span>
+                <input #bankFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onBankFile($event)" />
+                <strong>{{ selectedBankFileName || 'Choisir le fichier Banque' }}</strong>
+              </label>
+              <label class="file-drop" *ngIf="selectedOperator === 'MOOV'" [class.ready]="selectedMoovFileName">
+                <span class="file-title">Moov Money</span>
+                <span class="file-hint">Fichier operateur du meme jour de traitement.</span>
+                <input #moovFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onMoovFile($event)" />
+                <strong>{{ selectedMoovFileName || 'Choisir le fichier Moov' }}</strong>
+              </label>
+              <label class="file-drop" *ngIf="selectedOperator === 'ORANGE'" [class.ready]="selectedOrangeFileName">
+                <span class="file-title">Orange Money</span>
+                <span class="file-hint">Fichier operateur du meme jour de traitement.</span>
+                <input #orangeFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onOrangeFile($event)" />
+                <strong>{{ selectedOrangeFileName || 'Choisir le fichier Orange' }}</strong>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="upload-step">
+          <div class="step-index">3</div>
+          <div class="step-content">
+            <h3>Validation</h3>
+            <div class="readiness-panel">
+              <span [class.ok]="businessDate" [class.waiting]="!businessDate">{{ businessDate ? 'Date renseignee' : 'Date manquante' }}</span>
+              <span [class.ok]="selectedBankFileName" [class.waiting]="!selectedBankFileName">{{ selectedBankFileName ? 'Banque pret' : 'Banque a importer' }}</span>
+              <span [class.ok]="selectedOperatorFileName" [class.waiting]="!selectedOperatorFileName">{{ selectedOperatorFileName ? activeOperatorLabel + ' pret' : activeOperatorLabel + ' a importer' }}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="actions modal-actions">
+        <button class="primary" type="button" (click)="importBankOnly()" [disabled]="loading || !businessDate || !selectedBankFileName">Uploader Banque</button>
+        <button class="primary" type="button" (click)="importSelectedOperator()" [disabled]="loading || !businessDate || !selectedOperatorFileName">Uploader {{ activeOperatorLabel }}</button>
+        <button class="secondary" type="button" (click)="runReconciliation()" [disabled]="loading || !businessDate">Lancer reconciliation {{ activeOperatorLabel }}</button>
+        <button class="ghost" type="button" (click)="loadRuns()" [disabled]="loading">Actualiser</button>
+      </div>
+    </div>
+
+    <div class="upload-modal-body" *ngIf="uploadDialogMode === 'ACCOUNTING'">
+      <div class="upload-steps">
+        <section class="upload-step">
+          <div class="step-index">1</div>
+          <div class="step-content">
+            <h3>Contexte comptable</h3>
+            <div class="upload-form-grid">
+              <label>Date de l'extrait AMPLITUDE <input type="date" [(ngModel)]="businessDate" /></label>
+            </div>
+            <div class="context-summary">
+              <span>Controle: <b>Carthago / AMPLITUDE</b></span>
+              <span>Matching: <b>reference operation, montant, date</b></span>
+            </div>
+          </div>
+        </section>
+        <section class="upload-step">
+          <div class="step-index">2</div>
+          <div class="step-content">
+            <h3>Fichier comptable</h3>
+            <label class="file-drop accounting-file" [class.ready]="amplitudeFile">
+              <span class="file-title">Extrait AMPLITUDE</span>
+              <span class="file-hint">Chargez le fichier contenant date compta, date valeur, reference et credit.</span>
+              <input #amplitudeFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onAmplitudeFile($event)" />
+              <strong>{{ amplitudeFile?.name || 'Choisir le fichier AMPLITUDE' }}</strong>
+            </label>
+          </div>
+        </section>
+      </div>
+      <div class="actions modal-actions">
+        <button class="primary" type="button" (click)="importAmplitudeOnly()" [disabled]="loading || !businessDate || !amplitudeFile">Uploader AMPLITUDE</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="dialog-backdrop" *ngIf="dialogOpen" (click)="closeDialog()">
+  <div class="dialog" [ngClass]="dialogKind" (click)="$event.stopPropagation()">
+    <h3>{{ dialogTitle }}</h3>
+    <p>{{ dialogMessage }}</p>
+    <div class="dialog-actions"><button class="primary" (click)="closeDialog()">OK</button></div>
+  </div>
+</div>

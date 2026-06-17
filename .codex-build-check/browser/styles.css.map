@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["src/styles.scss"],
+  "sourcesContent": ["/* You can add global styles to this file, and also import other style files */\nhtml {\n  min-height: 100%;\n  background: #edf1f7;\n}\n\nbody {\n  min-height: 100%;\n  margin: 0;\n  background: #edf1f7;\n  color: #18233a;\n  -webkit-font-smoothing: antialiased;\n  text-rendering: geometricPrecision;\n}\n"],
+  "mappings": ";AACA;AACE,cAAA;AACA,cAAA;;AAGF;AACE,cAAA;AACA,UAAA;AACA,cAAA;AACA,SAAA;AACA,0BAAA;AACA,kBAAA;;",
+  "names": []
+}
