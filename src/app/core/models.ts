@@ -114,13 +114,14 @@ export interface BankTransaction {
   accountNumber?: string | null;
   phoneNumber?: string | null;
   operationReference?: string | null;
+  operationNature?: 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BANK_TO_MOOV' | 'MOOV_TO_BANK' | string | null;
 }
 
 export interface MoovTransaction {
   id: number;
   receiptNo: string;
   transactionStatusRaw?: string | null;
-  transactionType?: 'BANK_TO_MOOV' | 'MOOV_TO_BANK' | string | null;
+  transactionType?: 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BANK_TO_MOOV' | 'MOOV_TO_BANK' | string | null;
   amount?: number | null;
   completionTime?: string | null;
   msisdn?: string | null;
@@ -143,6 +144,7 @@ export type ReconciliationResultType =
   | 'ABSENT_COTE_MOOV'
   | 'ABSENT_COTE_ORANGE'
   | 'ABSENT_COTE_BANQUE'
+  | 'OPERATEUR_NON_ABOUTI_SANS_BANQUE'
   | 'MONTANT_DIFFERENT'
   | 'DOUBLON_BANQUE'
   | 'DOUBLON_MOOV'
@@ -195,6 +197,7 @@ export type DashboardResultTypeView =
   | 'ECHEC_DES_DEUX_COTES'
   | 'ABSENT_COTE_OPERATEUR'
   | 'ABSENT_COTE_BANQUE'
+  | 'OPERATEUR_NON_ABOUTI_SANS_BANQUE'
   | 'MONTANT_DIFFERENT'
   | 'STATUT_INCONNU'
   | 'DOUBLONS';

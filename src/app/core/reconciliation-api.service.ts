@@ -520,6 +520,8 @@ export class ReconciliationApiService {
         return 'absents-moov';
       case 'ABSENT_COTE_ORANGE':
         return 'absents-orange';
+      case 'OPERATEUR_NON_ABOUTI_SANS_BANQUE':
+        return 'operateur-non-abouti-sans-banque';
       case 'MONTANT_DIFFERENT':
         return 'montants-differents';
       case 'DOUBLON_BANQUE':

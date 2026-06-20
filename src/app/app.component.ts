@@ -2,7 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, from, Observable } from 'rxjs';
+import { concatMap, toArray } from 'rxjs/operators';
 import { ReconciliationApiService } from './core/reconciliation-api.service';
 import {
   BankTransaction,
@@ -22,6 +23,7 @@ import {
   AccountingCheckRow,
   AccountingKpi,
   AmplitudeCleanupResult,
+  FileImport,
   ReconciliationResult,
   ReconciliationResultType,
   ReconciliationRun,
@@ -80,10 +82,10 @@ export class AppComponent implements OnInit {
   cleanupBusinessDate = new Date().toISOString().slice(0, 10);
   cleanupPreview?: { sourceType: string; businessDate: string; candidateImports: number; candidateTransactions: number; impactedResults: number; impactedRuns: number };
 
-  bankFiles: Partial<Record<OperatorType, File>> = {};
-  moovFile?: File;
-  orangeFile?: File;
-  amplitudeFile?: File;
+  bankFiles: Partial<Record<OperatorType, File[]>> = {};
+  moovFiles: File[] = [];
+  orangeFiles: File[] = [];
+  amplitudeFiles: File[] = [];
   accountingDateFrom = new Date().toISOString().slice(0, 10);
   accountingDateTo = new Date().toISOString().slice(0, 10);
   accountingOperator: OperatorType = 'MOOV';
@@ -149,12 +151,12 @@ export class AppComponent implements OnInit {
   compensationPeriod?: CompensationPeriodResponse;
   compensationMode: 'DAILY' | 'WEEKLY' | 'MONTHLY' = 'DAILY';
   compensationDateMode: 'SINGLE' | 'RANGE' = 'SINGLE';
-  compensationDate = '';
+  compensationDate = new Date().toISOString().slice(0, 10);
   compensationDateFrom = '';
   compensationDateTo = '';
   compensationWeekFrom = '';
   compensationWeekTo = '';
-  compensationWeekReferenceDate = '';
+  compensationWeekReferenceDate = new Date().toISOString().slice(0, 10);
   compensationMonth = new Date().getMonth() + 1;
   allResults: ReconciliationResult[] = [];
   currentPage = 1;
@@ -174,6 +176,7 @@ export class AppComponent implements OnInit {
     'ABSENT_COTE_BANQUE',
     'ABSENT_COTE_MOOV',
     'ABSENT_COTE_ORANGE',
+    'OPERATEUR_NON_ABOUTI_SANS_BANQUE',
     'MONTANT_DIFFERENT',
     'DOUBLON_BANQUE',
     'DOUBLON_MOOV',
@@ -228,8 +231,7 @@ export class AppComponent implements OnInit {
       this.loadReportingSummary();
     }
     if (page === 'COMPENSATION') {
-      this.compensationRows = [];
-      this.compensationPeriod = undefined;
+      this.loadCompensation();
     }
     if (page === 'ACCOUNTING') {
       this.loadAccountingCheck();
@@ -289,43 +291,39 @@ export class AppComponent implements OnInit {
   }
 
   onBankFile(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const selectedFile = input.files?.[0];
-    if (!selectedFile) {
+    const files = this.filesFromEvent(event);
+    if (!files.length) {
       delete this.bankFiles[this.selectedOperator];
       return;
     }
-    this.bankFiles[this.selectedOperator] = selectedFile;
+    this.bankFiles[this.selectedOperator] = files;
   }
 
   onMoovFile(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.moovFile = input.files?.[0];
+    this.moovFiles = this.filesFromEvent(event);
   }
 
   onOrangeFile(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.orangeFile = input.files?.[0];
+    this.orangeFiles = this.filesFromEvent(event);
   }
   onAmplitudeFile(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.amplitudeFile = input.files?.[0];
+    this.amplitudeFiles = this.filesFromEvent(event);
   }
 
   importBankOnly(): void {
-    const bankFile = this.bankFiles[this.selectedOperator];
-    if (!bankFile) {
-      this.error = 'Veuillez choisir le fichier Banque.';
+    const bankFiles = this.bankFiles[this.selectedOperator] ?? [];
+    if (!bankFiles.length) {
+      this.error = 'Veuillez choisir au moins un fichier Banque.';
       this.openDialog('error', 'Validation', this.error);
       return;
     }
     this.error = '';
     this.message = '';
     this.loading = true;
-    this.api.importBank(bankFile, this.businessDate, this.selectedOperator).subscribe({
-      next: (bankImport) => {
-        const scope = bankImport.operatorScope || this.selectedOperator;
-        this.message = `Fichier Banque (${scope}) uploade avec succes. Import #${bankImport.id} (${bankImport.validRows}/${bankImport.totalRows}).`;
+    this.uploadSequentially(bankFiles, (file) => this.api.importBank(file, this.businessDate, this.selectedOperator)).subscribe({
+      next: (imports) => {
+        const scope = imports[0]?.operatorScope || this.selectedOperator;
+        this.message = this.buildImportSuccessMessage('Banque', imports, scope);
         delete this.bankFiles[this.selectedOperator];
         this.clearBankFileInput();
         this.uploadDialogOpen = false;
@@ -351,18 +349,18 @@ export class AppComponent implements OnInit {
   }
 
   importMoovOnly(): void {
-    if (!this.moovFile) {
-      this.error = 'Veuillez choisir le fichier Moov.';
+    if (!this.moovFiles.length) {
+      this.error = 'Veuillez choisir au moins un fichier Moov.';
       this.openDialog('error', 'Validation', this.error);
       return;
     }
     this.error = '';
     this.message = '';
     this.loading = true;
-    this.api.importMoov(this.moovFile, this.businessDate).subscribe({
-      next: (moovImport) => {
-        this.message = `Fichier Moov uploade avec succes. Import #${moovImport.id} (${moovImport.validRows}/${moovImport.totalRows}).`;
-        this.moovFile = undefined;
+    this.uploadSequentially(this.moovFiles, (file) => this.api.importMoov(file, this.businessDate)).subscribe({
+      next: (imports) => {
+        this.message = this.buildImportSuccessMessage('Moov', imports);
+        this.moovFiles = [];
         this.clearMoovFileInput();
         this.uploadDialogOpen = false;
         this.openDialog('success', 'Import Moov termine', this.message);
@@ -379,18 +377,18 @@ export class AppComponent implements OnInit {
   }
 
   uploadOrange(): void {
-    if (!this.orangeFile) {
-      this.error = 'Veuillez choisir le fichier Orange.';
+    if (!this.orangeFiles.length) {
+      this.error = 'Veuillez choisir au moins un fichier Orange.';
       this.openDialog('error', 'Validation', this.error);
       return;
     }
     this.error = '';
     this.message = '';
     this.loading = true;
-    this.api.importOrange(this.orangeFile, this.businessDate).subscribe({
-      next: (orangeImport) => {
-        this.message = `Fichier Orange uploade avec succes. Import #${orangeImport.id} (${orangeImport.validRows}/${orangeImport.totalRows}).`;
-        this.orangeFile = undefined;
+    this.uploadSequentially(this.orangeFiles, (file) => this.api.importOrange(file, this.businessDate)).subscribe({
+      next: (imports) => {
+        this.message = this.buildImportSuccessMessage('Orange', imports);
+        this.orangeFiles = [];
         this.clearOrangeFileInput();
         this.uploadDialogOpen = false;
         this.openDialog('success', 'Import Orange termine', this.message);
@@ -407,16 +405,16 @@ export class AppComponent implements OnInit {
   }
 
   importAmplitudeOnly(): void {
-    if (!this.amplitudeFile) {
-      this.error = 'Veuillez choisir le fichier AMPLITUDE.';
+    if (!this.amplitudeFiles.length) {
+      this.error = 'Veuillez choisir au moins un fichier AMPLITUDE.';
       this.openDialog('error', 'Validation', this.error);
       return;
     }
     this.loading = true;
-    this.api.importAmplitude(this.amplitudeFile, this.businessDate).subscribe({
-      next: (amplitudeImport) => {
-        this.message = `Fichier AMPLITUDE uploade avec succes. Import #${amplitudeImport.id} (${amplitudeImport.validRows}/${amplitudeImport.totalRows}).`;
-        this.amplitudeFile = undefined;
+    this.uploadSequentially(this.amplitudeFiles, (file) => this.api.importAmplitude(file, this.businessDate)).subscribe({
+      next: (imports) => {
+        this.message = this.buildImportSuccessMessage('AMPLITUDE', imports);
+        this.amplitudeFiles = [];
         if (this.amplitudeFileInput?.nativeElement) this.amplitudeFileInput.nativeElement.value = '';
         this.uploadDialogOpen = false;
         this.openDialog('success', 'Import AMPLITUDE termine', this.message);
@@ -429,6 +427,27 @@ export class AppComponent implements OnInit {
         this.loading = false;
       }
     });
+  }
+
+  private filesFromEvent(event: Event): File[] {
+    const input = event.target as HTMLInputElement;
+    return Array.from(input.files ?? []);
+  }
+
+  private uploadSequentially(files: File[], upload: (file: File) => Observable<FileImport>): Observable<FileImport[]> {
+    return from(files).pipe(
+      concatMap((file) => upload(file)),
+      toArray()
+    );
+  }
+
+  private buildImportSuccessMessage(label: string, imports: FileImport[], scope?: string): string {
+    const count = imports.length;
+    const totalRows = imports.reduce((sum, item) => sum + (item.totalRows ?? 0), 0);
+    const validRows = imports.reduce((sum, item) => sum + (item.validRows ?? 0), 0);
+    const ids = imports.map((item) => `#${item.id}`).join(', ');
+    const sourceLabel = scope ? `${label} (${scope})` : label;
+    return `${count} fichier${count > 1 ? 's' : ''} ${sourceLabel} uploade${count > 1 ? 's' : ''} avec succes. Imports ${ids} (${validRows}/${totalRows}).`;
   }
 
   loadAccountingCheck(): void {
@@ -604,6 +623,7 @@ export class AppComponent implements OnInit {
       ABSENT_COTE_ORANGE: 'Absent Orange',
       ABSENT_COTE_OPERATEUR: 'Absent operateur',
       ABSENT_COTE_BANQUE: 'Absent Banque',
+      OPERATEUR_NON_ABOUTI_SANS_BANQUE: 'Operateur non abouti',
       MONTANT_DIFFERENT: 'Montant different',
       DOUBLON_BANQUE: 'Doublon Banque',
       DOUBLON_MOOV: 'Doublon operateur',
@@ -618,7 +638,7 @@ export class AppComponent implements OnInit {
     const key = this.normalizeStatusKey(value);
     if (key.includes('MATCH') || key === 'COMPTABILISE' || key === 'OK_COMPENSATION' || key.includes('ALLOUE') || key.includes('COMPLETED') || key === 'TS') return 'ok';
     if (key.includes('INCONNU') || key.includes('UNKNOWN')) return 'unknown';
-    if (key.includes('DOUBLON') || key.includes('DIFFERENT') || key.includes('RISQUE')) return 'warn';
+    if (key.includes('DOUBLON') || key.includes('DIFFERENT') || key.includes('RISQUE') || key.includes('NON_ABOUTI')) return 'warn';
     if (key.includes('NON_COMPTABILISE') || key.includes('DEBIT') || key.includes('CREDIT') || key.includes('ABSENT') || key.includes('ECHEC') || key.includes('REJET') || key.includes('FAILED') || key.includes('CANCELLED') || key === 'TF' || key === 'A_VERIFIER') return 'ko';
     return 'neutral';
   }
@@ -938,19 +958,33 @@ export class AppComponent implements OnInit {
   }
 
   get selectedBankFileName(): string {
-    return this.bankFiles[this.selectedOperator]?.name || '';
+    return this.fileListLabel(this.bankFiles[this.selectedOperator] ?? []);
   }
 
   get selectedMoovFileName(): string {
-    return this.moovFile?.name || '';
+    return this.fileListLabel(this.moovFiles);
   }
 
   get selectedOrangeFileName(): string {
-    return this.orangeFile?.name || '';
+    return this.fileListLabel(this.orangeFiles);
   }
 
   get selectedOperatorFileName(): string {
     return this.selectedOperator === 'MOOV' ? this.selectedMoovFileName : this.selectedOrangeFileName;
+  }
+
+  get selectedAmplitudeFileName(): string {
+    return this.fileListLabel(this.amplitudeFiles);
+  }
+
+  private fileListLabel(files: File[]): string {
+    if (!files.length) {
+      return '';
+    }
+    if (files.length === 1) {
+      return files[0].name;
+    }
+    return `${files.length} fichiers selectionnes`;
   }
 
   get counterpartStatusLabel(): string {
@@ -1316,8 +1350,13 @@ export class AppComponent implements OnInit {
   private resolveOperationType(row: ReconciliationResult): 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BOTH' {
     if (this.selectedOperator === 'MOOV' && row.moovTransactionId) {
       const txType = this.moovTxById.get(row.moovTransactionId)?.transactionType;
-      if (txType === 'BANK_TO_MOOV') return 'BANK_TO_WALLET';
-      if (txType === 'MOOV_TO_BANK') return 'WALLET_TO_BANK';
+      if (txType === 'BANK_TO_WALLET' || txType === 'BANK_TO_MOOV') return 'BANK_TO_WALLET';
+      if (txType === 'WALLET_TO_BANK' || txType === 'MOOV_TO_BANK') return 'WALLET_TO_BANK';
+    }
+    if (row.bankTransactionId) {
+      const operationNature = this.bankTxById.get(row.bankTransactionId)?.operationNature;
+      if (operationNature === 'BANK_TO_WALLET' || operationNature === 'BANK_TO_MOOV') return 'BANK_TO_WALLET';
+      if (operationNature === 'WALLET_TO_BANK' || operationNature === 'MOOV_TO_BANK') return 'WALLET_TO_BANK';
     }
     if (row.bankTransactionId && !row.moovTransactionId) return 'BANK_TO_WALLET';
     if (!row.bankTransactionId && row.moovTransactionId) return 'WALLET_TO_BANK';
@@ -1497,23 +1536,24 @@ export class AppComponent implements OnInit {
   }
 
   private computeSummary(rows: ReconciliationResult[]): ReconciliationSummary {
-    const count = (type: ReconciliationResultType) => rows.filter((r) => r.resultType === type).length;
-    const totalMatchOk = count('MATCH_OK');
-    const totalEchecDesDeuxCotes = count('ECHEC_DES_DEUX_COTES');
-    const totalDebitATort = count('DEBIT_A_TORT');
-    const totalCreditSansDebit = count('CREDIT_SANS_DEBIT');
-    const totalAbsentBanque = count('ABSENT_COTE_BANQUE');
-    const totalAbsentMoov = this.selectedOperator === 'MOOV' ? count('ABSENT_COTE_MOOV') : count('ABSENT_COTE_ORANGE');
-    const totalMontantDifferent = count('MONTANT_DIFFERENT');
-    const totalDoublons = count('DOUBLON_BANQUE') + count('DOUBLON_MOOV');
-    const totalRows = rows.length;
-    const montantGlobalBanque = rows.reduce((acc, row) => acc + Number(row.bankAmount ?? 0), 0);
-    const montantGlobalMoov = rows.reduce((acc, row) => acc + Number(row.moovAmount ?? 0), 0);
+    const financialRows = rows.filter((row) => row.resultType !== 'OPERATEUR_NON_ABOUTI_SANS_BANQUE');
+    const countFinancial = (type: ReconciliationResultType) => financialRows.filter((r) => r.resultType === type).length;
+    const totalMatchOk = countFinancial('MATCH_OK');
+    const totalEchecDesDeuxCotes = countFinancial('ECHEC_DES_DEUX_COTES');
+    const totalDebitATort = countFinancial('DEBIT_A_TORT');
+    const totalCreditSansDebit = countFinancial('CREDIT_SANS_DEBIT');
+    const totalAbsentBanque = countFinancial('ABSENT_COTE_BANQUE');
+    const totalAbsentMoov = this.selectedOperator === 'MOOV' ? countFinancial('ABSENT_COTE_MOOV') : countFinancial('ABSENT_COTE_ORANGE');
+    const totalMontantDifferent = countFinancial('MONTANT_DIFFERENT');
+    const totalDoublons = countFinancial('DOUBLON_BANQUE') + countFinancial('DOUBLON_MOOV');
+    const totalRows = financialRows.length;
+    const montantGlobalBanque = financialRows.reduce((acc, row) => acc + Number(row.bankAmount ?? 0), 0);
+    const montantGlobalMoov = financialRows.reduce((acc, row) => acc + Number(row.moovAmount ?? 0), 0);
     const toRate = (v: number) => (totalRows ? (v * 100) / totalRows : 0);
 
     return {
-      totalBank: rows.filter((r) => r.bankTransactionId != null).length,
-      totalMoov: rows.filter((r) => r.moovTransactionId != null).length,
+      totalBank: financialRows.filter((r) => r.bankTransactionId != null).length,
+      totalMoov: financialRows.filter((r) => r.moovTransactionId != null).length,
       totalMatchOk,
       totalEchecDesDeuxCotes,
       totalDebitATort,
@@ -1565,14 +1605,6 @@ export class AppComponent implements OnInit {
     this.api.getDashboardTopAnomalies(params, 0, 10).subscribe({
       next: (page) => (this.dashboardTopAnomalies = page.content),
       error: () => (this.dashboardTopAnomalies = [])
-    });
-    this.api.getDailyCompensation(
-      this.selectedOperator,
-      this.compensationDate || null,
-      this.compensationDate || null
-    ).subscribe({
-      next: (rows) => (this.compensationRows = rows),
-      error: () => (this.compensationRows = [])
     });
   }
 
@@ -1678,6 +1710,59 @@ export class AppComponent implements OnInit {
     return rows.reduce((acc, r) => acc + Number(side === 'bank' ? (r.bankAmount ?? 0) : (r.operatorAmount ?? 0)), 0);
   }
 
+  get compensationBankCount(): number {
+    return this.compensationPeriod?.totalBankSuccessCount
+      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.bankSuccessCount ?? 0), 0);
+  }
+
+  get compensationOperatorCount(): number {
+    return this.compensationPeriod?.totalOperatorSuccessCount
+      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.operatorSuccessCount ?? 0), 0);
+  }
+
+  get compensationBankAmount(): number {
+    return this.compensationPeriod?.totalBankSuccessAmount
+      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.bankSuccessAmount ?? 0), 0);
+  }
+
+  get compensationOperatorAmount(): number {
+    return this.compensationPeriod?.totalOperatorSuccessAmount
+      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.operatorSuccessAmount ?? 0), 0);
+  }
+
+  get compensationNetGap(): number {
+    return this.compensationPeriod?.totalDifference
+      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.difference ?? 0), 0);
+  }
+
+  get compensationDecision(): string {
+    if (this.compensationPeriod?.decision) {
+      return this.compensationPeriod.decision;
+    }
+    if (!this.compensationRows.length) {
+      return '-';
+    }
+    return this.compensationRows.every((row) => row.decision === 'OK_COMPENSATION') ? 'OK_COMPENSATION' : 'A_VERIFIER';
+  }
+
+  get compensationPeriodLabel(): string {
+    if (this.compensationPeriod?.label) {
+      return this.compensationPeriod.label;
+    }
+    if (this.compensationMode === 'DAILY' && this.compensationDateMode === 'SINGLE') {
+      return this.compensationDate || 'Jour non defini';
+    }
+    if (this.compensationMode === 'DAILY') {
+      return `${this.compensationDateFrom || '-'} -> ${this.compensationDateTo || '-'}`;
+    }
+    if (this.compensationMode === 'WEEKLY') {
+      return this.compensationWeekFrom && this.compensationWeekTo
+        ? `${this.compensationWeekFrom} -> ${this.compensationWeekTo}`
+        : `Semaine de reference ${this.compensationWeekReferenceDate || '-'}`;
+    }
+    return `Mois ${this.compensationMonth}/${new Date().getFullYear()}`;
+  }
+
   get riskAbsentOperatorCount(): number { return this.riskRowsByType('ABSENT_OPERATEUR').length; }
   get riskAbsentBankCount(): number { return this.riskRowsByType('ABSENT_BANQUE').length; }
   get riskEchecDeuxCotesCount(): number { return this.riskRowsByType('ECHEC_DEUX_COTES').length; }
@@ -1701,6 +1786,59 @@ export class AppComponent implements OnInit {
       return !!this.compensationWeekReferenceDate;
     }
     return this.compensationMode === 'MONTHLY';
+  }
+
+  exportCompensationCsv(): void {
+    if (!this.compensationRows.length && !this.compensationDiscrepancies.length) {
+      this.error = 'Aucune donnee de compensation a exporter.';
+      return;
+    }
+    this.error = '';
+    const csvRows: string[] = [];
+    csvRows.push(['Synthese compensation', this.selectedOperator, this.compensationPeriodLabel].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Decision', this.statusLabel(this.compensationDecision)].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Nb tx Banque', 'Nb tx Operateur', 'Montant Banque', `Montant ${this.activeOperatorLabel}`, 'Ecart net', 'Operations a justifier'].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push([this.compensationBankCount, this.compensationOperatorCount, this.compensationBankAmount, this.compensationOperatorAmount, this.compensationNetGap, this.riskTotalCount].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push('');
+
+    csvRows.push(['Position par date'].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Date', 'Operateur', 'Nb tx Operateur', 'Nb tx Banque', 'Montant Operateur', 'Montant Banque', 'Ecart', 'Decision'].map((value) => this.csvCell(value)).join(';'));
+    for (const row of this.compensationRows) {
+      csvRows.push([
+        row.businessDate,
+        row.operator,
+        row.operatorSuccessCount,
+        row.bankSuccessCount,
+        row.operatorSuccessAmount,
+        row.bankSuccessAmount,
+        row.difference,
+        this.statusLabel(row.decision)
+      ].map((value) => this.csvCell(value)).join(';'));
+    }
+    csvRows.push('');
+
+    csvRows.push(['Ecarts a justifier'].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Date', 'Cle', 'Reference operation', 'Type', 'Telephone operateur', 'Statut Banque', 'Statut Operateur', 'Montant Banque', 'Montant Operateur', 'Ecart', 'Motif'].map((value) => this.csvCell(value)).join(';'));
+    for (const row of this.filteredCompensationDiscrepancies) {
+      csvRows.push([
+        row.businessDate,
+        row.transactionKey,
+        row.operationReference || '',
+        this.statusLabel(row.resultType),
+        row.operatorPhoneNumber || '',
+        this.statusLabel(row.bankStatusRaw),
+        this.statusLabel(row.operatorStatusRaw),
+        row.bankAmount ?? '',
+        row.operatorAmount ?? '',
+        row.amountDifference ?? '',
+        row.reason || ''
+      ].map((value) => this.csvCell(value)).join(';'));
+    }
+
+    const csvContent = '\uFEFF' + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    this.downloadBlob(blob, `compensation-${this.selectedOperator.toLowerCase()}-${stamp}.csv`);
   }
 
 

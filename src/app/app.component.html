@@ -524,20 +524,43 @@
           </label>
 
           <button class="primary" (click)="loadCompensation()" [disabled]="!canLoadCompensation">Appliquer</button>
+          <button class="secondary" (click)="exportCompensationCsv()" [disabled]="!compensationRows.length && !compensationDiscrepancies.length">Exporter CSV</button>
         </div>
 
-        <div class="totals" *ngIf="compensationPeriod">
-          <span>Periode: <b>{{ compensationPeriod.label }}</b></span>
-          <span *ngIf="compensationMode === 'WEEKLY'">Semaine: <b>{{ compensationWeekFrom }} -> {{ compensationWeekTo }}</b></span>
-          <span>Nb tx Operateur: <b>{{ compensationPeriod.totalOperatorSuccessCount }}</b></span>
-          <span>Nb tx Banque: <b>{{ compensationPeriod.totalBankSuccessCount }}</b></span>
-          <span>Montant Operateur: <b>{{ compensationPeriod.totalOperatorSuccessAmount | number : '1.0-2' }}</b></span>
-          <span>Montant Banque: <b>{{ compensationPeriod.totalBankSuccessAmount | number : '1.0-2' }}</b></span>
-          <span>Ecart: <b>{{ compensationPeriod.totalDifference | number : '1.0-2' }}</b></span>
-          <span>Decision: <b><span class="status-pill compact" [ngClass]="statusClass(compensationPeriod.decision)"><span class="status-icon">{{ statusIcon(compensationPeriod.decision) }}</span>{{ statusLabel(compensationPeriod.decision) }}</span></b></span>
+        <div class="compensation-summary">
+          <article class="compensation-decision" [ngClass]="statusClass(compensationDecision)">
+            <span class="label">Decision de compensation</span>
+            <strong><span class="status-icon">{{ statusIcon(compensationDecision) }}</span>{{ statusLabel(compensationDecision) }}</strong>
+            <small>{{ compensationPeriodLabel }}</small>
+          </article>
+
+          <div class="dashboard-kpi-strip compensation-kpis">
+            <article class="dashboard-kpi-tile kpi-soft-green">
+              <span class="label">Montant Banque</span>
+              <strong>{{ compensationBankAmount | number : '1.0-2' }}</strong>
+              <small>{{ compensationBankCount }} tx reussies</small>
+            </article>
+            <article class="dashboard-kpi-tile kpi-soft-yellow">
+              <span class="label">Montant {{ activeOperatorLabel }}</span>
+              <strong>{{ compensationOperatorAmount | number : '1.0-2' }}</strong>
+              <small>{{ compensationOperatorCount }} tx reussies</small>
+            </article>
+            <article class="dashboard-kpi-tile" [ngClass]="compensationNetGap === 0 ? 'kpi-soft-green' : 'kpi-soft-red'">
+              <span class="label">Ecart net</span>
+              <strong>{{ compensationNetGap | number : '1.0-2' }}</strong>
+              <small>Banque - operateur</small>
+            </article>
+            <article class="dashboard-kpi-tile" [ngClass]="riskTotalCount === 0 ? 'kpi-soft-green' : 'kpi-soft-orange'">
+              <span class="label">Operations a justifier</span>
+              <strong>{{ riskTotalCount }}</strong>
+              <small>{{ compensationDiscrepancies.length }} ecarts charges</small>
+            </article>
+          </div>
         </div>
 
-        <div class="table-wrap">
+        <div class="dashboard-block">
+          <h3>Position par date</h3>
+          <div class="table-wrap">
           <table>
             <thead>
               <tr>
@@ -557,10 +580,11 @@
               <tr *ngIf="compensationRows.length === 0"><td colspan="8">Aucune donnee de compensation.</td></tr>
             </tbody>
           </table>
+          </div>
         </div>
 
         <div class="dashboard-block">
-          <h3>Ecarts de Compensation</h3>
+          <h3>Ecarts a justifier</h3>
           <div class="kpi-filter-bar accounting-filter-bar">
             <label>Filtre risque
               <select [(ngModel)]="compensationRiskFilter">
@@ -572,9 +596,9 @@
             </label>
           </div>
           <div class="dashboard-kpi-strip">
-            <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Absent operateur</span><strong>{{ riskAbsentOperatorCount }}</strong><small>Banque: {{ riskAbsentOperatorBankAmount | number : '1.0-2' }}</small><small>{{ activeOperatorLabel }}: {{ riskAbsentOperatorOperatorAmount | number : '1.0-2' }}</small></article>
-            <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Absent banque</span><strong>{{ riskAbsentBankCount }}</strong><small>Banque: {{ riskAbsentBankBankAmount | number : '1.0-2' }}</small><small>{{ activeOperatorLabel }}: {{ riskAbsentBankOperatorAmount | number : '1.0-2' }}</small></article>
-            <article class="dashboard-kpi-tile kpi-soft-yellow"><span class="label">Echec 2 cotes</span><strong>{{ riskEchecDeuxCotesCount }}</strong><small>Banque: {{ riskEchecDeuxCotesBankAmount | number : '1.0-2' }}</small><small>{{ activeOperatorLabel }}: {{ riskEchecDeuxCotesOperatorAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Absent operateur</span><strong>{{ riskAbsentOperatorCount }}</strong><small>Impact Banque: {{ riskAbsentOperatorBankAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Absent banque</span><strong>{{ riskAbsentBankCount }}</strong><small>Impact {{ activeOperatorLabel }}: {{ riskAbsentBankOperatorAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile kpi-soft-yellow"><span class="label">Echec 2 cotes</span><strong>{{ riskEchecDeuxCotesCount }}</strong><small>Montant Banque: {{ riskEchecDeuxCotesBankAmount | number : '1.0-2' }}</small></article>
             <article class="dashboard-kpi-tile accounting-total"><span class="label">Total risques</span><strong>{{ riskTotalCount }}</strong></article>
           </div>
           <div class="table-wrap">
@@ -757,20 +781,20 @@
               <label class="file-drop" [class.ready]="selectedBankFileName">
                 <span class="file-title">Banque Carthago</span>
                 <span class="file-hint">Colonnes cles: TRANSACTIONID_, CDATE_, AMOUNT_, ALLOCATIONSTATUS_</span>
-                <input #bankFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onBankFile($event)" />
-                <strong>{{ selectedBankFileName || 'Choisir le fichier Banque' }}</strong>
+                <input #bankFileInput type="file" accept=".csv,.xls,.xlsx" multiple (change)="onBankFile($event)" />
+                <strong>{{ selectedBankFileName || 'Choisir les fichiers Banque' }}</strong>
               </label>
               <label class="file-drop" *ngIf="selectedOperator === 'MOOV'" [class.ready]="selectedMoovFileName">
                 <span class="file-title">Moov Money</span>
                 <span class="file-hint">Fichier operateur du meme jour de traitement.</span>
-                <input #moovFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onMoovFile($event)" />
-                <strong>{{ selectedMoovFileName || 'Choisir le fichier Moov' }}</strong>
+                <input #moovFileInput type="file" accept=".csv,.xls,.xlsx" multiple (change)="onMoovFile($event)" />
+                <strong>{{ selectedMoovFileName || 'Choisir les fichiers Moov' }}</strong>
               </label>
               <label class="file-drop" *ngIf="selectedOperator === 'ORANGE'" [class.ready]="selectedOrangeFileName">
                 <span class="file-title">Orange Money</span>
                 <span class="file-hint">Fichier operateur du meme jour de traitement.</span>
-                <input #orangeFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onOrangeFile($event)" />
-                <strong>{{ selectedOrangeFileName || 'Choisir le fichier Orange' }}</strong>
+                <input #orangeFileInput type="file" accept=".csv,.xls,.xlsx" multiple (change)="onOrangeFile($event)" />
+                <strong>{{ selectedOrangeFileName || 'Choisir les fichiers Orange' }}</strong>
               </label>
             </div>
           </div>
@@ -816,17 +840,17 @@
           <div class="step-index">2</div>
           <div class="step-content">
             <h3>Fichier comptable</h3>
-            <label class="file-drop accounting-file" [class.ready]="amplitudeFile">
+            <label class="file-drop accounting-file" [class.ready]="selectedAmplitudeFileName">
               <span class="file-title">Extrait AMPLITUDE</span>
               <span class="file-hint">Chargez le fichier contenant date compta, date valeur, reference et credit.</span>
-              <input #amplitudeFileInput type="file" accept=".csv,.xls,.xlsx" (change)="onAmplitudeFile($event)" />
-              <strong>{{ amplitudeFile?.name || 'Choisir le fichier AMPLITUDE' }}</strong>
+              <input #amplitudeFileInput type="file" accept=".csv,.xls,.xlsx" multiple (change)="onAmplitudeFile($event)" />
+              <strong>{{ selectedAmplitudeFileName || 'Choisir les fichiers AMPLITUDE' }}</strong>
             </label>
           </div>
         </section>
       </div>
       <div class="actions modal-actions">
-        <button class="primary" type="button" (click)="importAmplitudeOnly()" [disabled]="loading || !businessDate || !amplitudeFile">Uploader AMPLITUDE</button>
+        <button class="primary" type="button" (click)="importAmplitudeOnly()" [disabled]="loading || !businessDate || !selectedAmplitudeFileName">Uploader AMPLITUDE</button>
       </div>
     </div>
   </section>
