@@ -130,6 +130,7 @@
     <nav class="top-nav-tabs">
       <button class="tab-btn home-tab" (click)="backToHome()">Accueil</button>
       <button class="tab-btn" [class.active]="activePage === 'DASHBOARD'" (click)="setPage('DASHBOARD')">Dashboard</button>
+      <button class="tab-btn" [class.active]="activePage === 'HISTORIQUE'" (click)="setPage('HISTORIQUE')">Historique</button>
       <button class="tab-btn" [class.active]="activePage === 'RECONCILIATION'" (click)="setPage('RECONCILIATION')">Reconciliation</button>
       <button class="tab-btn" [class.active]="activePage === 'COMPENSATION'" (click)="setPage('COMPENSATION')">Compensation</button>
       <button class="tab-btn" [class.active]="activePage === 'ACCOUNTING'" (click)="setPage('ACCOUNTING')">Comptabilisation</button>
@@ -138,6 +139,7 @@
       <span>Accueil</span>
       <span>/</span>
       <span *ngIf="activePage === 'DASHBOARD'">Dashboard</span>
+      <span *ngIf="activePage === 'HISTORIQUE'">Historique</span>
       <span *ngIf="activePage === 'RECONCILIATION'">Reconciliation</span>
       <span *ngIf="activePage === 'COMPENSATION'">Compensation</span>
       <span *ngIf="activePage === 'ACCOUNTING'">Comptabilisation</span>
@@ -148,10 +150,12 @@
       <div>
         <h1 *ngIf="activePage === 'RECONCILIATION'">Reconciliation Banque / {{ activeOperatorLabel }}</h1>
         <h1 *ngIf="activePage === 'DASHBOARD'">Dashboard Reconciliation / {{ activeOperatorLabel }}</h1>
+        <h1 *ngIf="activePage === 'HISTORIQUE'">Historique des reconciliations / {{ activeOperatorLabel }}</h1>
         <h1 *ngIf="activePage === 'COMPENSATION'">Compensation / {{ activeOperatorLabel }}</h1>
         <h1 *ngIf="activePage === 'ACCOUNTING'">Comptabilisation Carthago / AMPLITUDE</h1>
         <p *ngIf="activePage === 'RECONCILIATION'">Pilotage des imports, runs et resultats de reconciliation.</p>
         <p *ngIf="activePage === 'DASHBOARD'">Page dediee KPI, montants, timeline et top anomalies.</p>
+        <p *ngIf="activePage === 'HISTORIQUE'">Consultation des rapprochements disponibles par date transaction.</p>
         <p *ngIf="activePage === 'COMPENSATION'">Module dedie aux compensations journaliere, hebdomadaire et mensuelle.</p>
         <p *ngIf="activePage === 'ACCOUNTING'">Controle de comptabilisation CBS a partir des references operation Carthago.</p>
       </div>
@@ -281,27 +285,6 @@
       </section>
 
       <section class="card dashboard-card full-page" *ngIf="dashboardSummary && activePage === 'DASHBOARD'">
-        <h2>Dashboard KPI {{ activeOperatorLabel }}</h2>
-        <div class="kpi-filter-bar">
-          <label>Portee KPI (date transaction) <select [(ngModel)]="periodMode"><option value="SINGLE_DAY">Jour unique</option><option value="RANGE">Entre deux dates</option></select></label>
-          <label *ngIf="periodMode === 'SINGLE_DAY'">Jour transaction <input type="date" [(ngModel)]="singleDay" /></label>
-          <label *ngIf="periodMode === 'RANGE'">Date transaction debut <input type="date" [(ngModel)]="dateFrom" /></label>
-          <label *ngIf="periodMode === 'RANGE'">Date transaction fin <input type="date" [(ngModel)]="dateTo" /></label>
-          <button class="primary" (click)="applyKpiFilters()" [disabled]="loading">Appliquer</button>
-          <button class="quick-range reset" (click)="resetHistoryFilter()">Reinitialiser</button>
-        </div>
-        <p class="kpi-scope">
-          <span *ngIf="dashboardSummary.periodType === 'DAY'">Jour transaction: {{ dashboardSummary.businessDate }}</span>
-          <span *ngIf="dashboardSummary.periodType === 'RANGE'">Periode transaction: {{ dashboardSummary.dateFrom }} -> {{ dashboardSummary.dateTo }}</span>
-        </p>
-        <div class="dashboard-kpi-strip">
-          <article class="dashboard-kpi-tile" *ngFor="let tile of dashboardKpiTiles" [ngClass]="tile.tone">
-            <span class="label">{{ tile.label }}</span>
-            <strong>{{ tile.value }}</strong>
-            <small *ngIf="tile.hint">{{ tile.hint }}</small>
-          </article>
-        </div>
-
         <div class="dashboard-block reporting-block">
           <div class="reporting-head">
             <h3>Reporting Managerial (Journalier / Hebdo / Mensuel)</h3>
@@ -348,7 +331,7 @@
               </button>
             </div>
             <div class="dashboard-block">
-              <h3>Journalier</h3>
+              <h3>Timeline Reporting</h3>
               <div class="timeline-row" *ngFor="let d of report.dailyBreakdown">
                 <span>{{ d.businessDate }}</span>
                 <div class="bar-wrap"><div class="bar tx" [style.width.%]="(d.totalTransactions * 100) / (report.kpis.picVolumeJournalier.totalTransactions || 1)"></div></div>
@@ -401,56 +384,6 @@
           </div>
         </div>
 
-        <div class="dashboard-grid">
-          <div class="dashboard-block">
-            <h3>Distribution des resultats</h3>
-            <div class="dist-row" *ngFor="let item of dashboardDistribution">
-              <span><span class="status-pill compact" [ngClass]="statusClass(item.resultType)"><span class="status-icon">{{ statusIcon(item.resultType) }}</span>{{ statusLabel(item.resultType) }}</span></span>
-              <div class="bar-wrap">
-                <div class="bar dist" [style.width.%]="(item.count * 100) / maxDistributionCount"></div>
-              </div>
-              <b>{{ item.count }}</b>
-            </div>
-          </div>
-
-          <div class="dashboard-block">
-            <h3>Timeline Horaire</h3>
-            <div class="timeline-row" *ngFor="let point of dashboardTimeline">
-              <span>{{ point.hour }}</span>
-              <div class="bar-wrap">
-                <div class="bar tx" [style.width.%]="(point.totalTransactions * 100) / maxTimelineTransactions"></div>
-              </div>
-              <small>{{ point.totalTransactions }}</small>
-              <div class="bar-wrap anomaly">
-                <div class="bar an" [style.width.%]="(point.anomalies * 100) / maxTimelineAnomalies"></div>
-              </div>
-              <small>{{ point.anomalies }}</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="dashboard-grid">
-          <div class="dashboard-block" *ngIf="dashboardDataQuality">
-            <h3>Qualite des donnees</h3>
-            <div class="metric-list">
-              <div class="metric-row" *ngFor="let item of dashboardQualityMetrics">
-                <span>{{ item.label }}</span>
-                <b>{{ item.value }}</b>
-              </div>
-            </div>
-          </div>
-
-          <div class="dashboard-block" *ngIf="dashboardAmounts">
-            <h3>Montants</h3>
-            <div class="metric-list">
-              <div class="metric-row" *ngFor="let item of dashboardAmountMetrics" [ngClass]="item.tone">
-                <span>{{ item.label }}</span>
-                <b>{{ item.value }}</b>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div class="dashboard-block">
           <h3>Top anomalies</h3>
           <div class="table-wrap">
@@ -486,6 +419,67 @@
           </div>
         </div>
 
+      </section>
+
+      <section class="card dashboard-card full-page history-page" *ngIf="activePage === 'HISTORIQUE'">
+        <h2>Historique des reconciliations {{ activeOperatorLabel }}</h2>
+        <div class="kpi-filter-bar">
+          <label>Type de periode
+            <select [(ngModel)]="periodMode">
+              <option value="SINGLE_DAY">Journee unique</option>
+              <option value="RANGE">Entre deux dates</option>
+            </select>
+          </label>
+          <label *ngIf="periodMode === 'SINGLE_DAY'">Jour transaction <input type="date" [(ngModel)]="singleDay" /></label>
+          <label *ngIf="periodMode === 'RANGE'">Date debut <input type="date" [(ngModel)]="dateFrom" /></label>
+          <label *ngIf="periodMode === 'RANGE'">Date fin <input type="date" [(ngModel)]="dateTo" /></label>
+          <button class="primary" (click)="applyKpiFilters()" [disabled]="loading">Charger l'historique</button>
+          <button class="quick-range" (click)="applyPreset('LAST_7_DAYS')">7 derniers jours</button>
+          <button class="quick-range" (click)="applyPreset('LAST_30_DAYS')">30 derniers jours</button>
+          <button class="quick-range" (click)="applyPreset('LAST_3_MONTHS')">3 derniers mois</button>
+          <button class="quick-range reset" (click)="resetHistoryFilter()">Reinitialiser</button>
+        </div>
+
+        <div class="dashboard-kpi-strip history-kpis">
+          <article class="dashboard-kpi-tile kpi-soft-yellow"><span class="label">Total transactions</span><strong>{{ historyTotalTransactions }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Matches</span><strong>{{ historyMatched }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Ecarts</span><strong>{{ historyGaps }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Taux d'erreur</span><strong>{{ historyErrorRate | number : '1.1-1' }}%</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Taux de succes</span><strong>{{ historySuccessRate | number : '1.1-1' }}%</strong></article>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Total transactions</th>
+                <th>Matches</th>
+                <th>Ecarts</th>
+                <th>Manquants {{ activeOperatorLabel }}</th>
+                <th>Manquants Banque</th>
+                <th>Taux de succes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of historyRows" [class.soft-failure-row]="row.gaps > 0">
+                <td>{{ row.businessDate }}</td>
+                <td>{{ row.totalTransactions }}</td>
+                <td class="metric-success">{{ row.matched }}</td>
+                <td class="metric-warning">{{ row.gaps }}</td>
+                <td>{{ row.absentOperator }}</td>
+                <td>{{ row.absentBank }}</td>
+                <td><span class="status-pill" [ngClass]="row.successRate >= 95 ? 'status-ok' : row.successRate >= 70 ? 'status-warning' : 'status-danger'">{{ row.successRate | number : '1.1-1' }}%</span></td>
+                <td>
+                  <button class="secondary" type="button" (click)="openHistoryRun(row)" [disabled]="row.businessDate === '-'">Reporting</button>
+                  <button class="tool excel" type="button" (click)="exportHistoryDateCsv(row)">Excel</button>
+                </td>
+              </tr>
+              <tr *ngIf="historyRows.length === 0"><td colspan="8">Aucune reconciliation trouvee sur la periode.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section class="card dashboard-card full-page" *ngIf="activePage === 'COMPENSATION'">
@@ -631,6 +625,10 @@
 
       <section class="card dashboard-card full-page accounting-page" *ngIf="activePage === 'ACCOUNTING'">
         <h2>Controle de comptabilisation {{ accountingOperatorLabel }}</h2>
+        <div class="top-nav-tabs accounting-tabs">
+          <button class="tab-btn" [class.active]="accountingView === 'CURRENT'" (click)="showAccountingCurrent()">Controle courant</button>
+          <button class="tab-btn" [class.active]="accountingView === 'HISTORY'" (click)="showAccountingHistory()">Historique comptabilisation</button>
+        </div>
         <div class="kpi-filter-bar accounting-filter-bar">
           <label>Operateur
             <select [(ngModel)]="accountingOperator" (ngModelChange)="loadAccountingCheck()">
@@ -662,13 +660,19 @@
           <button class="secondary" (click)="exportAccountingKpiCsv()">Exporter KPI CSV</button>
           <button class="secondary" (click)="exportAccountingKpiPdf()">Exporter KPI PDF</button>
         </div>
-        <div class="dashboard-kpi-strip">
+        <div class="dashboard-kpi-strip" *ngIf="accountingView === 'CURRENT'">
           <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Comptabilise</span><strong>{{ comptabiliseCount }}</strong></article>
           <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Non Comptabilise</span><strong>{{ nonComptabiliseCount }}</strong></article>
           <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Operations a risque</span><strong>{{ accountingRiskCount }}</strong></article>
           <article class="dashboard-kpi-tile accounting-total"><span class="label">Total alloue {{ accountingOperatorLabel }}</span><strong>{{ accountingRows.length }}</strong></article>
         </div>
-        <div class="kpi-filter-bar accounting-filter-bar">
+        <div class="dashboard-kpi-strip" *ngIf="accountingView === 'HISTORY'">
+          <article class="dashboard-kpi-tile accounting-total"><span class="label">Total controle</span><strong>{{ accountingHistoryTotals.totalTransactions }}</strong><small>Montant: {{ accountingHistoryTotals.totalAmount | number : '1.0-2' }}</small></article>
+          <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Comptabilisees</span><strong>{{ accountingHistoryTotals.comptabilizedTransactions }}</strong><small>Montant: {{ accountingHistoryTotals.comptabilizedAmount | number : '1.0-2' }}</small></article>
+          <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Non comptabilisees</span><strong>{{ accountingHistoryTotals.nonComptabilizedTransactions }}</strong><small>Montant: {{ accountingHistoryTotals.nonComptabilizedAmount | number : '1.0-2' }}</small></article>
+          <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Montant a risque</span><strong>{{ accountingHistoryTotals.amountAtRisk | number : '1.0-2' }}</strong><small>Taux: {{ accountingHistoryTotals.comptabilizationRate | number : '1.0-2' }}%</small></article>
+        </div>
+        <div class="kpi-filter-bar accounting-filter-bar" *ngIf="accountingView === 'CURRENT'">
           <label>Statut
             <select [(ngModel)]="accountingStatusFilter">
               <option [ngValue]="'ALL'">Tous</option>
@@ -682,7 +686,7 @@
           <label>Reference <input type="text" [(ngModel)]="accountingSearchReference" placeholder="Recherche reference" /></label>
           <label>Transaction ID <input type="text" [(ngModel)]="accountingSearchTransactionId" placeholder="Recherche transaction" /></label>
         </div>
-        <div class="dashboard-kpi-strip" *ngIf="accountingKpi as k">
+        <div class="dashboard-kpi-strip" *ngIf="accountingView === 'CURRENT' && accountingKpi as k">
           <article class="dashboard-kpi-tile kpi-soft-green">
             <span class="label">Volume Carthago alloue {{ accountingOperatorLabel }}</span>
             <strong>{{ k.totalTransactions }}</strong>
@@ -710,7 +714,7 @@
             <small>Montant total ecarts: {{ k.totalGapAmount | number : '1.0-2' }}</small>
           </article>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" *ngIf="accountingView === 'CURRENT'">
           <table>
             <thead>
             <tr>
@@ -734,6 +738,33 @@
               </td>
             </tr>
             <tr *ngIf="filteredAccountingRows.length === 0"><td colspan="11">Aucune donnee sur la periode.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-wrap" *ngIf="accountingView === 'HISTORY'">
+          <table>
+            <thead>
+            <tr>
+              <th>Date</th><th>Total operations</th><th>Montant Carthago</th><th>Comptabilisees</th><th>Montant comptabilise</th><th>Non comptabilisees</th><th>Montant non comptabilise</th><th>Montant a risque</th><th>Taux comptabilisation</th><th>Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr *ngFor="let row of accountingHistoryRows" [class.soft-failure-row]="row.nonComptabilizedTransactions > 0">
+              <td>{{ row.businessDate }}</td>
+              <td>{{ row.totalTransactions }}</td>
+              <td>{{ row.totalAmount | number : '1.0-2' }}</td>
+              <td class="metric-success">{{ row.comptabilizedTransactions }}</td>
+              <td>{{ row.comptabilizedAmount | number : '1.0-2' }}</td>
+              <td class="metric-warning">{{ row.nonComptabilizedTransactions }}</td>
+              <td>{{ row.nonComptabilizedAmount | number : '1.0-2' }}</td>
+              <td>{{ row.amountAtRisk | number : '1.0-2' }}</td>
+              <td><span class="status-pill" [ngClass]="row.comptabilizationRate >= 95 ? 'status-ok' : row.comptabilizationRate >= 70 ? 'status-warning' : 'status-danger'">{{ row.comptabilizationRate | number : '1.0-2' }}%</span></td>
+              <td>
+                <button class="secondary" type="button" (click)="openAccountingHistoryDate(row)">Details</button>
+                <button class="tool excel" type="button" (click)="exportAccountingHistoryDateCsv(row)">Excel</button>
+              </td>
+            </tr>
+            <tr *ngIf="accountingHistoryRows.length === 0"><td colspan="10">Aucune donnee comptable sur la periode.</td></tr>
             </tbody>
           </table>
         </div>

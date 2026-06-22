@@ -1,14 +1,31 @@
-/* You can add global styles to this file, and also import other style files */
+:root {
+  color-scheme: light;
+  font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
 html {
   min-height: 100%;
-  background: #edf1f7;
+  background: #f3f6fa;
 }
 
 body {
   min-height: 100%;
   margin: 0;
-  background: #edf1f7;
-  color: #18233a;
+  background: #f3f6fa;
+  color: #172033;
+  font-family: inherit;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: #cfe8f8;
+  color: #102a43;
 }

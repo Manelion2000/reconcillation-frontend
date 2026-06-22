@@ -197,6 +197,7 @@ export type DashboardResultTypeView =
   | 'ECHEC_DES_DEUX_COTES'
   | 'ABSENT_COTE_OPERATEUR'
   | 'ABSENT_COTE_BANQUE'
+  | 'OPERATEUR_ABOUTI_SANS_CARTHAGO'
   | 'OPERATEUR_NON_ABOUTI_SANS_BANQUE'
   | 'MONTANT_DIFFERENT'
   | 'STATUT_INCONNU'
@@ -261,6 +262,14 @@ export interface ReportingKpis {
   montantTotalOperateur: number;
   montantAnomalies: number;
   ecartGlobal: number;
+  operateurSuccessCount: number;
+  operateurSuccessAmount: number;
+  bankSuccessCount: number;
+  bankSuccessAmount: number;
+  operateurSuccessSansCarthagoCount: number;
+  operateurSuccessSansCarthagoAmount: number;
+  operateurHorsPerimetreCount: number;
+  operateurHorsPerimetreAmount: number;
   moyenneJournaliereTransactions: number;
   picVolumeJournalier: {
     businessDate?: string | null;

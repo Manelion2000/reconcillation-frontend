@@ -34,12 +34,36 @@ import {
 type OperatorType = 'MOOV' | 'ORANGE';
 type ImportSourceType = 'BANQUE' | 'MOOV' | 'ORANGE' | 'AMPLITUDE';
 type KpiTone = 'kpi-soft-green' | 'kpi-soft-yellow' | 'kpi-soft-orange' | 'kpi-soft-red';
+type PageType = 'DASHBOARD' | 'HISTORIQUE' | 'RECONCILIATION' | 'COMPENSATION' | 'ACCOUNTING';
 
 interface KpiTile {
   label: string;
   value: string | number;
   tone: KpiTone;
   hint?: string;
+}
+
+interface ReconciliationHistoryRow {
+  businessDate: string;
+  totalTransactions: number;
+  matched: number;
+  gaps: number;
+  absentOperator: number;
+  absentBank: number;
+  successRate: number;
+  latestRun?: ReconciliationRun;
+}
+
+interface AccountingHistoryRow {
+  businessDate: string;
+  totalTransactions: number;
+  totalAmount: number;
+  comptabilizedTransactions: number;
+  comptabilizedAmount: number;
+  nonComptabilizedTransactions: number;
+  nonComptabilizedAmount: number;
+  amountAtRisk: number;
+  comptabilizationRate: number;
 }
 
 @Component({
@@ -56,7 +80,7 @@ export class AppComponent implements OnInit {
   @ViewChild('amplitudeFileInput') amplitudeFileInput?: ElementRef<HTMLInputElement>;
 
   selectedOperator: OperatorType = 'MOOV';
-  activePage: 'DASHBOARD' | 'RECONCILIATION' | 'COMPENSATION' | 'ACCOUNTING' = 'DASHBOARD';
+  activePage: PageType = 'DASHBOARD';
   businessDate = new Date().toISOString().slice(0, 10);
   dateFrom = '';
   dateTo = '';
@@ -89,6 +113,7 @@ export class AppComponent implements OnInit {
   accountingDateFrom = new Date().toISOString().slice(0, 10);
   accountingDateTo = new Date().toISOString().slice(0, 10);
   accountingOperator: OperatorType = 'MOOV';
+  accountingView: 'CURRENT' | 'HISTORY' = 'CURRENT';
   accountingMode: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'RANGE' = 'DAILY';
   accountingDate = new Date().toISOString().slice(0, 10);
   accountingWeekReferenceDate = new Date().toISOString().slice(0, 10);
@@ -223,12 +248,26 @@ export class AppComponent implements OnInit {
     this.loadReportingSummary();
   }
 
-  setPage(page: 'DASHBOARD' | 'RECONCILIATION' | 'COMPENSATION' | 'ACCOUNTING'): void {
+  setPage(page: PageType): void {
     this.activePage = page;
-    this.pushPath(page === 'DASHBOARD' ? '/dashboard' : page === 'RECONCILIATION' ? '/reconciliation' : page === 'COMPENSATION' ? '/compensation' : '/accounting');
+    this.pushPath(
+      page === 'DASHBOARD'
+        ? '/dashboard'
+        : page === 'HISTORIQUE'
+          ? '/historique-reconciliations'
+          : page === 'RECONCILIATION'
+            ? '/reconciliation'
+            : page === 'COMPENSATION'
+              ? '/compensation'
+              : '/accounting'
+    );
     if (page === 'DASHBOARD') {
       this.loadDashboardData();
       this.loadReportingSummary();
+    }
+    if (page === 'HISTORIQUE') {
+      this.loadRuns();
+      this.loadSummaryAndResults();
     }
     if (page === 'COMPENSATION') {
       this.loadCompensation();
@@ -265,6 +304,11 @@ export class AppComponent implements OnInit {
       this.activePage = 'DASHBOARD';
       return;
     }
+    if (path.endsWith('/historique-reconciliations')) {
+      this.showHome = false;
+      this.activePage = 'HISTORIQUE';
+      return;
+    }
     if (path.endsWith('/reconciliation')) {
       this.showHome = false;
       this.activePage = 'RECONCILIATION';
@@ -283,7 +327,7 @@ export class AppComponent implements OnInit {
     this.showHome = true;
   }
 
-  private pushPath(path: '/home' | '/dashboard' | '/reconciliation' | '/compensation' | '/accounting'): void {
+  private pushPath(path: '/home' | '/dashboard' | '/historique-reconciliations' | '/reconciliation' | '/compensation' | '/accounting'): void {
     if (this.router.url === path) {
       return;
     }
@@ -465,6 +509,33 @@ export class AppComponent implements OnInit {
     });
   }
 
+  showAccountingCurrent(): void {
+    this.accountingView = 'CURRENT';
+  }
+
+  showAccountingHistory(): void {
+    this.accountingView = 'HISTORY';
+    this.api.getLatestCarthagoDate(this.accountingOperator).subscribe({
+      next: (latestDate) => {
+        this.applyAccountingLastSevenDays(latestDate || undefined);
+        this.loadAccountingCheck();
+      },
+      error: () => {
+        this.applyAccountingLastSevenDays();
+        this.loadAccountingCheck();
+      }
+    });
+  }
+
+  private applyAccountingLastSevenDays(referenceDate?: string): void {
+    const end = referenceDate ? new Date(referenceDate + 'T00:00:00') : new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+    this.accountingMode = 'RANGE';
+    this.accountingDateFrom = start.toISOString().slice(0, 10);
+    this.accountingDateTo = end.toISOString().slice(0, 10);
+  }
+
   runAmplitudeCleanup(): void {
     this.error = '';
     this.message = '';
@@ -575,6 +646,82 @@ export class AppComponent implements OnInit {
     return this.accountingRows.filter((r) => this.isAccountingRisk(r)).length;
   }
 
+  get accountingHistoryRows(): AccountingHistoryRow[] {
+    const rowsByDate = new Map<string, AccountingCheckRow[]>();
+    for (const row of this.accountingRows) {
+      const businessDate = (row.operationDate || row.accountingDateRaw || '-').slice(0, 10);
+      rowsByDate.set(businessDate, [...(rowsByDate.get(businessDate) ?? []), row]);
+    }
+
+    return Array.from(rowsByDate.entries())
+      .map(([businessDate, rows]) => {
+        const totalTransactions = rows.length;
+        const totalAmount = this.sumAccountingAmount(rows, 'amount');
+        const comptabilizedRows = rows.filter((row) => row.status === 'COMPTABILISE');
+        const nonComptabilizedRows = rows.filter((row) => row.status === 'NON_COMPTABILISE');
+        const comptabilizedTransactions = comptabilizedRows.length;
+        const comptabilizedAmount = this.sumAccountingAmount(comptabilizedRows, 'amount');
+        const nonComptabilizedTransactions = nonComptabilizedRows.length;
+        const nonComptabilizedAmount = this.sumAccountingAmount(nonComptabilizedRows, 'amount');
+        return {
+          businessDate,
+          totalTransactions,
+          totalAmount,
+          comptabilizedTransactions,
+          comptabilizedAmount,
+          nonComptabilizedTransactions,
+          nonComptabilizedAmount,
+          amountAtRisk: nonComptabilizedAmount,
+          comptabilizationRate: totalTransactions ? (comptabilizedTransactions * 100) / totalTransactions : 0
+        };
+      })
+      .sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+  }
+
+  get accountingHistoryTotals(): AccountingHistoryRow {
+    const rows = this.accountingHistoryRows;
+    const totalTransactions = rows.reduce((sum, row) => sum + row.totalTransactions, 0);
+    const comptabilizedTransactions = rows.reduce((sum, row) => sum + row.comptabilizedTransactions, 0);
+    return {
+      businessDate: '',
+      totalTransactions,
+      totalAmount: rows.reduce((sum, row) => sum + row.totalAmount, 0),
+      comptabilizedTransactions,
+      comptabilizedAmount: rows.reduce((sum, row) => sum + row.comptabilizedAmount, 0),
+      nonComptabilizedTransactions: rows.reduce((sum, row) => sum + row.nonComptabilizedTransactions, 0),
+      nonComptabilizedAmount: rows.reduce((sum, row) => sum + row.nonComptabilizedAmount, 0),
+      amountAtRisk: rows.reduce((sum, row) => sum + row.amountAtRisk, 0),
+      comptabilizationRate: totalTransactions ? (comptabilizedTransactions * 100) / totalTransactions : 0
+    };
+  }
+
+  openAccountingHistoryDate(row: AccountingHistoryRow): void {
+    if (!row.businessDate || row.businessDate === '-') return;
+    this.accountingView = 'CURRENT';
+    this.accountingMode = 'DAILY';
+    this.accountingDate = row.businessDate;
+    this.loadAccountingCheck();
+  }
+
+  exportAccountingHistoryDateCsv(row: AccountingHistoryRow): void {
+    const rows = this.accountingRows.filter((item) => (item.operationDate || item.accountingDateRaw || '-').slice(0, 10) === row.businessDate);
+    if (!rows.length) {
+      this.error = 'Aucune ligne comptable a exporter pour cette date.';
+      return;
+    }
+    const csvRows: string[] = [];
+    csvRows.push(['Historique comptabilisation', this.accountingOperator, row.businessDate].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Total', 'Montant total', 'Comptabilisees', 'Montant comptabilise', 'Non comptabilisees', 'Montant a risque', 'Taux comptabilisation'].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push([row.totalTransactions, row.totalAmount, row.comptabilizedTransactions, row.comptabilizedAmount, row.nonComptabilizedTransactions, row.amountAtRisk, `${this.formatNumber(row.comptabilizationRate)}%`].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push('');
+    csvRows.push(['Date compta', 'Date valeur', 'Tel AMPLITUDE', `Tel Carthago ${this.accountingOperatorLabel}`, 'Reference operation', 'Transaction ID', 'Date operation', 'Montant Carthago', 'Credit AMPLITUDE', 'Compte', 'Statut'].map((value) => this.csvCell(value)).join(';'));
+    for (const item of rows) {
+      csvRows.push([item.accountingDateRaw || '', item.valueDateRaw || '', item.phoneNumber || '', item.bankPhoneNumber || '', item.operationReference || '', item.transactionId || '', item.operationDate || '', item.amount ?? '', item.amplitudeCredit ?? '', item.accountNumber || '', this.statusLabel(item.status)].map((value) => this.csvCell(value)).join(';'));
+    }
+    const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    this.downloadBlob(blob, `historique-comptabilisation-${this.accountingOperator.toLowerCase()}-${row.businessDate}.csv`);
+  }
+
   get filteredAccountingRows(): AccountingCheckRow[] {
     const phone = this.accountingSearchPhone.trim().toLowerCase();
     const account = this.accountingSearchAccount.trim().toLowerCase();
@@ -600,12 +747,16 @@ export class AppComponent implements OnInit {
     return Number(row.amount) !== Number(row.amplitudeCredit);
   }
 
+  private sumAccountingAmount(rows: AccountingCheckRow[], field: 'amount' | 'amplitudeCredit'): number {
+    return rows.reduce((sum, row) => sum + Number(row[field] ?? 0), 0);
+  }
+
   statusIcon(value: string | null | undefined): string {
     const key = this.normalizeStatusKey(value);
     if (!key || key === '-') return '-';
     if (key.includes('MATCH') || (key.includes('COMPTABILISE') && !key.includes('NON')) || key.includes('OK_COMPENSATION')) return '✓';
     if (key.includes('INCONNU') || key.includes('UNKNOWN')) return '?';
-    if (key.includes('DOUBLON') || key.includes('DIFFERENT') || key.includes('RISQUE')) return '!';
+    if (key.includes('DOUBLON') || key.includes('DIFFERENT') || key.includes('RISQUE') || key.includes('SANS_CARTHAGO')) return '!';
     if (key.includes('NON_COMPTABILISE') || key.includes('DEBIT') || key.includes('CREDIT') || key.includes('ABSENT') || key.includes('ECHEC') || key.includes('REJET') || key.includes('FAILED') || key.includes('A_VERIFIER')) return '!';
     return '•';
   }
@@ -623,6 +774,7 @@ export class AppComponent implements OnInit {
       ABSENT_COTE_ORANGE: 'Absent Orange',
       ABSENT_COTE_OPERATEUR: 'Absent operateur',
       ABSENT_COTE_BANQUE: 'Absent Banque',
+      OPERATEUR_ABOUTI_SANS_CARTHAGO: `${this.activeOperatorLabel} abouti sans Carthago`,
       OPERATEUR_NON_ABOUTI_SANS_BANQUE: 'Operateur non abouti',
       MONTANT_DIFFERENT: 'Montant different',
       DOUBLON_BANQUE: 'Doublon Banque',
@@ -636,7 +788,8 @@ export class AppComponent implements OnInit {
 
   statusClass(value: string | null | undefined): string {
     const key = this.normalizeStatusKey(value);
-    if (key.includes('MATCH') || key === 'COMPTABILISE' || key === 'OK_COMPENSATION' || key.includes('ALLOUE') || key.includes('COMPLETED') || key === 'TS') return 'ok';
+    if (key.includes('SANS_CARTHAGO')) return 'warn';
+    if (key.includes('MATCH') || key === 'COMPTABILISE' || key === 'OK_COMPENSATION' || key.includes('ALLOUE') || key.includes('ABOUTI') || key.includes('COMPLETED') || key === 'TS') return 'ok';
     if (key.includes('INCONNU') || key.includes('UNKNOWN')) return 'unknown';
     if (key.includes('DOUBLON') || key.includes('DIFFERENT') || key.includes('RISQUE') || key.includes('NON_ABOUTI')) return 'warn';
     if (key.includes('NON_COMPTABILISE') || key.includes('DEBIT') || key.includes('CREDIT') || key.includes('ABSENT') || key.includes('ECHEC') || key.includes('REJET') || key.includes('FAILED') || key.includes('CANCELLED') || key === 'TF' || key === 'A_VERIFIER') return 'ko';
@@ -1000,6 +1153,27 @@ export class AppComponent implements OnInit {
     this.loadTransactionsForRun(run);
     this.loadSummaryAndResults();
     this.loadDashboardData();
+  }
+
+  openHistoryRun(row: ReconciliationHistoryRow): void {
+    if (!row.businessDate || row.businessDate === '-') {
+      return;
+    }
+
+    this.periodMode = 'SINGLE_DAY';
+    this.singleDay = row.businessDate;
+    this.dateFrom = '';
+    this.dateTo = '';
+    this.selectedPreset = null;
+    this.appliedPeriodMode = 'SINGLE_DAY';
+    this.appliedSingleDay = row.businessDate;
+    this.appliedDateFrom = '';
+    this.appliedDateTo = '';
+    this.reportingPeriodType = 'DAY';
+    this.reportingReferenceDate = row.businessDate;
+    this.selectedReportingResultType = 'ALL';
+    this.selectedRun = row.latestRun;
+    this.setPage('DASHBOARD');
   }
 
   onFilterChange(): void {
@@ -1432,6 +1606,52 @@ export class AppComponent implements OnInit {
     URL.revokeObjectURL(url);
   }
 
+  exportHistoryDateCsv(historyRow: ReconciliationHistoryRow): void {
+    const rows = this.operatorScopedResults.filter((row) => (row.businessDate || '-') === historyRow.businessDate);
+    if (!rows.length) {
+      this.error = 'Aucune ligne a exporter pour cette date.';
+      return;
+    }
+    this.error = '';
+
+    const csvRows: string[] = [];
+    csvRows.push(['Historique reconciliation', this.selectedOperator, historyRow.businessDate].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Total transactions', 'Matches', 'Ecarts', `Manquants ${this.activeOperatorLabel}`, 'Manquants Banque', 'Taux de succes'].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push([
+      historyRow.totalTransactions,
+      historyRow.matched,
+      historyRow.gaps,
+      historyRow.absentOperator,
+      historyRow.absentBank,
+      `${this.formatNumber(historyRow.successRate)}%`
+    ].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push('');
+    csvRows.push(['Cle', 'Type', 'Direction', 'Reference operation', 'Nom complet', 'Telephone', 'Compte', 'Date Banque', `Date ${this.activeOperatorLabel}`, 'Montant Banque', this.counterpartAmountLabel, 'Ecart', 'Statut Banque', this.counterpartStatusLabel, 'Motif'].map((value) => this.csvCell(value)).join(';'));
+    for (const row of rows) {
+      csvRows.push([
+        row.transactionKey,
+        row.resultType,
+        this.direction(row),
+        this.bankOperationReference(row),
+        this.bankFullName(row),
+        this.bankMsisdn(row),
+        this.bankAccountNumber(row),
+        this.bankDate(row),
+        this.counterpartDate(row),
+        row.bankAmount ?? '',
+        row.moovAmount ?? '',
+        row.amountDifference ?? '',
+        row.bankStatusRaw ?? '',
+        row.moovStatusRaw ?? '',
+        row.reason ?? ''
+      ].map((value) => this.csvCell(value)).join(';'));
+    }
+
+    const csvContent = '\uFEFF' + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    this.downloadBlob(blob, `historique-reconciliation-${this.selectedOperator.toLowerCase()}-${historyRow.businessDate}.csv`);
+  }
+
   get maxDistributionCount(): number {
     if (!this.dashboardDistribution.length) {
       return 1;
@@ -1481,6 +1701,30 @@ export class AppComponent implements OnInit {
       { label: 'Anomaly Rate', value: this.formatPercent(r.anomalyRate), tone: 'kpi-soft-orange' },
       { label: 'Montant Banque', value: this.formatAmount(r.montantTotalBanque), tone: 'kpi-soft-yellow' },
       { label: `Montant ${this.activeOperatorLabel}`, value: this.formatAmount(r.montantTotalOperateur), tone: 'kpi-soft-yellow' },
+      {
+        label: `${this.activeOperatorLabel} abouti`,
+        value: r.operateurSuccessCount ?? 0,
+        tone: 'kpi-soft-green',
+        hint: `Montant: ${this.formatAmount(r.operateurSuccessAmount)}`
+      },
+      {
+        label: 'Carthago abouti',
+        value: r.bankSuccessCount ?? 0,
+        tone: 'kpi-soft-green',
+        hint: `Montant: ${this.formatAmount(r.bankSuccessAmount)}`
+      },
+      {
+        label: `${this.activeOperatorLabel} abouti sans Carthago`,
+        value: r.operateurSuccessSansCarthagoCount ?? 0,
+        tone: 'kpi-soft-orange',
+        hint: `Montant: ${this.formatAmount(r.operateurSuccessSansCarthagoAmount)}`
+      },
+      {
+        label: `${this.activeOperatorLabel} hors Carthago`,
+        value: r.operateurHorsPerimetreCount ?? 0,
+        tone: 'kpi-soft-orange',
+        hint: `Montant: ${this.formatAmount(r.operateurHorsPerimetreAmount)}`
+      },
       { label: 'Moy. Jour', value: this.formatNumber(r.moyenneJournaliereTransactions), tone: 'kpi-soft-yellow' },
       {
         label: 'Pic Jour',
@@ -1518,6 +1762,60 @@ export class AppComponent implements OnInit {
       { label: 'Anomalies', value: this.formatAmount(a.montantAnomalies), tone: 'kpi-soft-orange' },
       { label: 'Ecart', value: this.formatAmount(a.ecartGlobal), tone: 'kpi-soft-red' }
     ];
+  }
+
+  get historyRows(): ReconciliationHistoryRow[] {
+    const rowsByDate = new Map<string, ReconciliationResult[]>();
+    for (const row of this.operatorScopedResults) {
+      const businessDate = row.businessDate || '-';
+      rowsByDate.set(businessDate, [...(rowsByDate.get(businessDate) ?? []), row]);
+    }
+
+    return Array.from(rowsByDate.entries())
+      .map(([businessDate, rows]) => {
+        const financiallyRelevant = rows.filter((row) => row.resultType !== 'OPERATEUR_NON_ABOUTI_SANS_BANQUE');
+        const matched = financiallyRelevant.filter((row) => row.resultType === 'MATCH_OK').length;
+        const absentOperator = financiallyRelevant.filter((row) =>
+          row.resultType === 'ABSENT_COTE_MOOV' || row.resultType === 'ABSENT_COTE_ORANGE'
+        ).length;
+        const absentBank = financiallyRelevant.filter((row) => row.resultType === 'ABSENT_COTE_BANQUE').length;
+        const gaps = financiallyRelevant.filter((row) => row.resultType !== 'MATCH_OK').length;
+        const latestRun = this.runs
+          .filter((run) => businessDate >= run.businessDateFrom && businessDate <= run.businessDateTo)
+          .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))[0];
+
+        return {
+          businessDate,
+          totalTransactions: financiallyRelevant.length,
+          matched,
+          gaps,
+          absentOperator,
+          absentBank,
+          successRate: financiallyRelevant.length ? (matched * 100) / financiallyRelevant.length : 0,
+          latestRun
+        };
+      })
+      .sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+  }
+
+  get historyTotalTransactions(): number {
+    return this.historyRows.reduce((sum, row) => sum + row.totalTransactions, 0);
+  }
+
+  get historyMatched(): number {
+    return this.historyRows.reduce((sum, row) => sum + row.matched, 0);
+  }
+
+  get historyGaps(): number {
+    return this.historyRows.reduce((sum, row) => sum + row.gaps, 0);
+  }
+
+  get historySuccessRate(): number {
+    return this.historyTotalTransactions ? (this.historyMatched * 100) / this.historyTotalTransactions : 0;
+  }
+
+  get historyErrorRate(): number {
+    return this.historyTotalTransactions ? (this.historyGaps * 100) / this.historyTotalTransactions : 0;
   }
 
   private formatPercent(value?: number | null): string {

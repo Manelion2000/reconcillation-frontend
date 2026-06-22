@@ -447,6 +447,15 @@ export class ReconciliationApiService {
     const params = new HttpParams().set('dateFrom', dateFrom).set('dateTo', dateTo);
     return this.http.get<AccountingKpi>(`${this.accountingOperatorPath(operator)}/kpi`, { params });
   }
+
+  getLatestCarthagoDate(operator?: 'MOOV' | 'ORANGE'): Observable<string | null> {
+    let params = new HttpParams();
+    if (operator) {
+      params = params.set('operator', operator);
+    }
+    return this.http.get<string | null>(`${this.api}/accounting/carthago/latest-date`, { params });
+  }
+
   exportAccountingKpiCsv(dateFrom: string, dateTo: string, operator?: 'MOOV' | 'ORANGE'): Observable<Blob> {
     const params = new HttpParams().set('dateFrom', dateFrom).set('dateTo', dateTo);
     return this.http.get(`${this.accountingOperatorPath(operator)}/kpi/export/csv`, { params, responseType: 'blob' });
