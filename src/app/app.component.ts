@@ -186,6 +186,7 @@ export class AppComponent implements OnInit {
   allResults: ReconciliationResult[] = [];
   currentPage = 1;
   readonly pageSize = 20;
+  tablePages: Record<string, number> = {};
   private summaryRequestVersion = 0;
 
   bankTxById = new Map<number, BankTransaction>();
@@ -499,6 +500,8 @@ export class AppComponent implements OnInit {
     if (!range) return;
     this.accountingDateFrom = range.from;
     this.accountingDateTo = range.to;
+    this.resetTablePage('accounting-current');
+    this.resetTablePage('accounting-history');
     this.api.getAccountingCheck(range.from, range.to, this.accountingOperator).subscribe({
       next: (rows) => this.accountingRows = rows ?? [],
       error: () => this.accountingRows = []
@@ -600,6 +603,39 @@ export class AppComponent implements OnInit {
       next: (blob) => this.downloadBlob(blob, `accounting-kpi-${this.accountingOperator.toLowerCase()}-${range.from}-${range.to}.pdf`),
       error: () => (this.error = 'Echec export PDF KPI comptabilisation.')
     });
+  }
+
+  exportAccountingListExcel(type: 'COMPTABILISE' | 'RISQUE'): void {
+    const rows = type === 'COMPTABILISE'
+      ? this.accountingRows.filter((row) => row.status === 'COMPTABILISE')
+      : this.accountingRows.filter((row) => this.isAccountingRisk(row));
+    if (!rows.length) {
+      this.error = type === 'COMPTABILISE'
+        ? 'Aucune operation comptabilisee a exporter.'
+        : 'Aucune operation a risque a exporter.';
+      return;
+    }
+    this.error = '';
+    const title = type === 'COMPTABILISE' ? 'Operations comptabilisees' : 'Operations a risque';
+    const headers = ['Date compta', 'Date valeur', 'Tel AMPLITUDE', `Tel Carthago ${this.accountingOperatorLabel}`, 'Reference operation', 'Transaction ID', 'Date operation', 'Montant Carthago', 'Credit AMPLITUDE', 'Compte', 'Statut'];
+    const body = rows.map((row) => [
+      row.accountingDateRaw || '',
+      row.valueDateRaw || '',
+      row.phoneNumber || '',
+      row.bankPhoneNumber || '',
+      row.operationReference || '',
+      row.transactionId || '',
+      row.operationDate || '',
+      row.amount ?? '',
+      row.amplitudeCredit ?? '',
+      row.accountNumber || '',
+      this.statusLabel(row.status)
+    ]);
+    const html = this.buildExcelHtml(title, headers, body);
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const range = this.resolveAccountingRange();
+    const period = range ? `${range.from}-${range.to}` : new Date().toISOString().slice(0, 10);
+    this.downloadBlob(blob, `amplitude-${type.toLowerCase()}-${this.accountingOperator.toLowerCase()}-${period}.xls`);
   }
 
   private resolveAccountingRange(): { from: string; to: string } | null {
@@ -739,6 +775,34 @@ export class AppComponent implements OnInit {
       .filter((r) => !account || (r.accountNumber || '').toLowerCase().includes(account))
       .filter((r) => !ref || (r.operationReference || '').toLowerCase().includes(ref))
       .filter((r) => !txId || (r.transactionId || '').toLowerCase().includes(txId));
+  }
+
+  get paginatedAccountingRows(): AccountingCheckRow[] {
+    return this.paginateRows(this.filteredAccountingRows, 'accounting-current');
+  }
+
+  get paginatedAccountingHistoryRows(): AccountingHistoryRow[] {
+    return this.paginateRows(this.accountingHistoryRows, 'accounting-history');
+  }
+
+  get paginatedCompensationRows(): CompensationDaily[] {
+    return this.paginateRows(this.compensationRows, 'compensation-position');
+  }
+
+  get paginatedCompensationDiscrepancies(): CompensationDiscrepancy[] {
+    return this.paginateRows(this.filteredCompensationDiscrepancies, 'compensation-risk');
+  }
+
+  get paginatedHistoryRows(): ReconciliationHistoryRow[] {
+    return this.paginateRows(this.historyRows, 'history');
+  }
+
+  get paginatedReportingTransactionDetails(): ReportingTransactionDetail[] {
+    return this.paginateRows(this.filteredReportingTransactionDetails, 'reporting-details');
+  }
+
+  get paginatedDashboardTopAnomalies(): typeof this.dashboardTopAnomalies {
+    return this.paginateRows(this.dashboardTopAnomalies, 'dashboard-anomalies');
   }
 
   private isAccountingRisk(row: AccountingCheckRow): boolean {
@@ -1578,6 +1642,50 @@ export class AppComponent implements OnInit {
     this.currentPage = page;
   }
 
+  tablePage(tableId: string): number {
+    return this.tablePages[tableId] ?? 1;
+  }
+
+  tableTotalPages(rows: unknown[]): number {
+    return Math.max(Math.ceil(rows.length / this.pageSize), 1);
+  }
+
+  goTablePage(tableId: string, rows: unknown[], page: number): void {
+    const total = this.tableTotalPages(rows);
+    this.tablePages[tableId] = Math.min(Math.max(page, 1), total);
+  }
+
+  private resetTablePage(tableId: string): void {
+    this.tablePages[tableId] = 1;
+  }
+
+  private paginateRows<T>(rows: T[], tableId: string): T[] {
+    const total = this.tableTotalPages(rows);
+    const page = Math.min(this.tablePage(tableId), total);
+    if (page !== this.tablePage(tableId)) {
+      this.tablePages[tableId] = page;
+    }
+    const start = (page - 1) * this.pageSize;
+    return rows.slice(start, start + this.pageSize);
+  }
+
+  private buildExcelHtml(title: string, headers: string[], rows: Array<Array<string | number>>): string {
+    const headerCells = headers.map((value) => `<th>${this.escapeHtml(value)}</th>`).join('');
+    const bodyRows = rows
+      .map((row) => `<tr>${row.map((value) => `<td>${this.escapeHtml(value)}</td>`).join('')}</tr>`)
+      .join('');
+    return `<!doctype html><html><head><meta charset="utf-8"></head><body><table><thead><tr><th colspan="${headers.length}">${this.escapeHtml(title)}</th></tr><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+  }
+
+  private escapeHtml(value: string | number | null | undefined): string {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   exportFilteredResultsExcel(): void {
     const rows = this.filteredResults;
     if (!rows.length) {
@@ -1686,7 +1794,7 @@ export class AppComponent implements OnInit {
       { label: 'Anomaly Rate', value: this.formatPercent(s.anomalyRate), tone: 'kpi-soft-orange' },
       { label: 'Total Results', value: s.totalResults, tone: 'kpi-soft-yellow' },
       { label: 'Montant Anomalies', value: this.formatAmount(s.montantAnomalies), tone: 'kpi-soft-orange' },
-      { label: 'Ecart Global', value: this.formatAmount(s.ecartGlobal), tone: 'kpi-soft-red' }
+      { label: 'Ecart aboutis', value: this.formatAmount(s.ecartGlobal), tone: 'kpi-soft-red' }
     ];
   }
 
@@ -1699,19 +1807,17 @@ export class AppComponent implements OnInit {
       { label: 'Tx Total', value: r.totalTransactions, tone: 'kpi-soft-green' },
       { label: 'Success Rate', value: this.formatPercent(r.successRate), tone: 'kpi-soft-green' },
       { label: 'Anomaly Rate', value: this.formatPercent(r.anomalyRate), tone: 'kpi-soft-orange' },
-      { label: 'Montant Banque', value: this.formatAmount(r.montantTotalBanque), tone: 'kpi-soft-yellow' },
-      { label: `Montant ${this.activeOperatorLabel}`, value: this.formatAmount(r.montantTotalOperateur), tone: 'kpi-soft-yellow' },
       {
-        label: `${this.activeOperatorLabel} abouti`,
-        value: r.operateurSuccessCount ?? 0,
+        label: 'Banque abouti',
+        value: this.formatAmount(r.bankSuccessAmount),
         tone: 'kpi-soft-green',
-        hint: `Montant: ${this.formatAmount(r.operateurSuccessAmount)}`
+        hint: `${this.formatNumber(r.bankSuccessCount)} tx`
       },
       {
-        label: 'Carthago abouti',
-        value: r.bankSuccessCount ?? 0,
+        label: `${this.activeOperatorLabel} abouti`,
+        value: this.formatAmount(r.operateurSuccessAmount),
         tone: 'kpi-soft-green',
-        hint: `Montant: ${this.formatAmount(r.bankSuccessAmount)}`
+        hint: `${this.formatNumber(r.operateurSuccessCount)} tx`
       },
       {
         label: `${this.activeOperatorLabel} abouti sans Carthago`,
@@ -1725,15 +1831,18 @@ export class AppComponent implements OnInit {
         tone: 'kpi-soft-orange',
         hint: `Montant: ${this.formatAmount(r.operateurHorsPerimetreAmount)}`
       },
-      { label: 'Moy. Jour', value: this.formatNumber(r.moyenneJournaliereTransactions), tone: 'kpi-soft-yellow' },
       {
-        label: 'Pic Jour',
-        value: r.picVolumeJournalier.totalTransactions,
+        label: 'Activite jour',
+        value: this.formatNumber(r.moyenneJournaliereTransactions),
         tone: 'kpi-soft-yellow',
-        hint: r.picVolumeJournalier.businessDate || '-'
+        hint: `Pic: ${this.formatNumber(r.picVolumeJournalier.totalTransactions)} tx${r.picVolumeJournalier.businessDate ? ` le ${r.picVolumeJournalier.businessDate}` : ''}`
       },
       { label: 'Debit a tort', value: r.debitATortCount, tone: 'kpi-soft-orange' },
-      { label: 'Ecart Global', value: this.formatAmount(r.ecartGlobal), tone: 'kpi-soft-red' }
+      {
+        label: 'Ecart aboutis',
+        value: this.formatAmount((r.bankSuccessAmount ?? 0) - (r.operateurSuccessAmount ?? 0)),
+        tone: 'kpi-soft-red'
+      }
     ];
   }
 
@@ -1757,10 +1866,10 @@ export class AppComponent implements OnInit {
     }
     const a = this.dashboardAmounts;
     return [
-      { label: 'Banque', value: this.formatAmount(a.montantGlobalBanque), tone: 'kpi-soft-green' },
-      { label: this.activeOperatorLabel, value: this.formatAmount(a.montantGlobalOperateur), tone: 'kpi-soft-yellow' },
+      { label: 'Banque abouti', value: this.formatAmount(a.montantGlobalBanque), tone: 'kpi-soft-green' },
+      { label: `${this.activeOperatorLabel} abouti`, value: this.formatAmount(a.montantGlobalOperateur), tone: 'kpi-soft-yellow' },
       { label: 'Anomalies', value: this.formatAmount(a.montantAnomalies), tone: 'kpi-soft-orange' },
-      { label: 'Ecart', value: this.formatAmount(a.ecartGlobal), tone: 'kpi-soft-red' }
+      { label: 'Ecart aboutis', value: this.formatAmount(a.ecartGlobal), tone: 'kpi-soft-red' }
     ];
   }
 

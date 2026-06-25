@@ -363,7 +363,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let row of filteredReportingTransactionDetails">
+                  <tr *ngFor="let row of paginatedReportingTransactionDetails">
                     <td>{{ row.businessDate }}</td>
                     <td>{{ row.transactionKey }}</td>
                     <td><span class="status-pill compact" [ngClass]="statusClass(row.resultType)"><span class="status-icon">{{ statusIcon(row.resultType) }}</span>{{ statusLabel(row.resultType) }}</span></td>
@@ -380,6 +380,11 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div class="table-pagination" *ngIf="filteredReportingTransactionDetails.length > 0">
+              <button class="page-btn" (click)="goTablePage('reporting-details', filteredReportingTransactionDetails, tablePage('reporting-details') - 1)" [disabled]="tablePage('reporting-details') <= 1">Precedent</button>
+              <span>Page {{ tablePage('reporting-details') }} / {{ tableTotalPages(filteredReportingTransactionDetails) }} ({{ filteredReportingTransactionDetails.length }} lignes)</span>
+              <button class="page-btn" (click)="goTablePage('reporting-details', filteredReportingTransactionDetails, tablePage('reporting-details') + 1)" [disabled]="tablePage('reporting-details') >= tableTotalPages(filteredReportingTransactionDetails)">Suivant</button>
             </div>
           </div>
         </div>
@@ -401,7 +406,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let row of dashboardTopAnomalies">
+                <tr *ngFor="let row of paginatedDashboardTopAnomalies">
                   <td>{{ row.transactionKey }}</td>
                   <td>{{ row.businessDate }}</td>
                   <td><span class="status-pill" [ngClass]="statusClass(row.resultType)"><span class="status-icon">{{ statusIcon(row.resultType) }}</span>{{ statusLabel(row.resultType) }}</span></td>
@@ -416,6 +421,11 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div class="table-pagination" *ngIf="dashboardTopAnomalies.length > 0">
+            <button class="page-btn" (click)="goTablePage('dashboard-anomalies', dashboardTopAnomalies, tablePage('dashboard-anomalies') - 1)" [disabled]="tablePage('dashboard-anomalies') <= 1">Precedent</button>
+            <span>Page {{ tablePage('dashboard-anomalies') }} / {{ tableTotalPages(dashboardTopAnomalies) }} ({{ dashboardTopAnomalies.length }} lignes)</span>
+            <button class="page-btn" (click)="goTablePage('dashboard-anomalies', dashboardTopAnomalies, tablePage('dashboard-anomalies') + 1)" [disabled]="tablePage('dashboard-anomalies') >= tableTotalPages(dashboardTopAnomalies)">Suivant</button>
           </div>
         </div>
 
@@ -463,7 +473,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let row of historyRows" [class.soft-failure-row]="row.gaps > 0">
+              <tr *ngFor="let row of paginatedHistoryRows" [class.soft-failure-row]="row.gaps > 0">
                 <td>{{ row.businessDate }}</td>
                 <td>{{ row.totalTransactions }}</td>
                 <td class="metric-success">{{ row.matched }}</td>
@@ -479,6 +489,11 @@
               <tr *ngIf="historyRows.length === 0"><td colspan="8">Aucune reconciliation trouvee sur la periode.</td></tr>
             </tbody>
           </table>
+        </div>
+        <div class="table-pagination" *ngIf="historyRows.length > 0">
+          <button class="page-btn" (click)="goTablePage('history', historyRows, tablePage('history') - 1)" [disabled]="tablePage('history') <= 1">Precedent</button>
+          <span>Page {{ tablePage('history') }} / {{ tableTotalPages(historyRows) }} ({{ historyRows.length }} lignes)</span>
+          <button class="page-btn" (click)="goTablePage('history', historyRows, tablePage('history') + 1)" [disabled]="tablePage('history') >= tableTotalPages(historyRows)">Suivant</button>
         </div>
       </section>
 
@@ -562,7 +577,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let row of compensationRows">
+              <tr *ngFor="let row of paginatedCompensationRows">
                 <td>{{ row.businessDate }}</td><td>{{ row.operator }}</td>
                 <td>{{ row.operatorSuccessCount }}</td>
                 <td>{{ row.bankSuccessCount }}</td>
@@ -574,6 +589,11 @@
               <tr *ngIf="compensationRows.length === 0"><td colspan="8">Aucune donnee de compensation.</td></tr>
             </tbody>
           </table>
+          </div>
+          <div class="table-pagination" *ngIf="compensationRows.length > 0">
+            <button class="page-btn" (click)="goTablePage('compensation-position', compensationRows, tablePage('compensation-position') - 1)" [disabled]="tablePage('compensation-position') <= 1">Precedent</button>
+            <span>Page {{ tablePage('compensation-position') }} / {{ tableTotalPages(compensationRows) }} ({{ compensationRows.length }} lignes)</span>
+            <button class="page-btn" (click)="goTablePage('compensation-position', compensationRows, tablePage('compensation-position') + 1)" [disabled]="tablePage('compensation-position') >= tableTotalPages(compensationRows)">Suivant</button>
           </div>
         </div>
 
@@ -603,7 +623,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let row of filteredCompensationDiscrepancies">
+                <tr *ngFor="let row of paginatedCompensationDiscrepancies">
                   <td>{{ row.businessDate }}</td>
                   <td>{{ row.transactionKey }}</td>
                   <td>{{ row.operationReference || '-' }}</td>
@@ -619,6 +639,11 @@
                 <tr *ngIf="filteredCompensationDiscrepancies.length === 0"><td colspan="11">Aucun ecart de compensation sur la periode.</td></tr>
               </tbody>
             </table>
+          </div>
+          <div class="table-pagination" *ngIf="filteredCompensationDiscrepancies.length > 0">
+            <button class="page-btn" (click)="goTablePage('compensation-risk', filteredCompensationDiscrepancies, tablePage('compensation-risk') - 1)" [disabled]="tablePage('compensation-risk') <= 1">Precedent</button>
+            <span>Page {{ tablePage('compensation-risk') }} / {{ tableTotalPages(filteredCompensationDiscrepancies) }} ({{ filteredCompensationDiscrepancies.length }} lignes)</span>
+            <button class="page-btn" (click)="goTablePage('compensation-risk', filteredCompensationDiscrepancies, tablePage('compensation-risk') + 1)" [disabled]="tablePage('compensation-risk') >= tableTotalPages(filteredCompensationDiscrepancies)">Suivant</button>
           </div>
         </div>
       </section>
@@ -659,6 +684,8 @@
           <button class="primary" (click)="loadAccountingCheck()">Appliquer</button>
           <button class="secondary" (click)="exportAccountingKpiCsv()">Exporter KPI CSV</button>
           <button class="secondary" (click)="exportAccountingKpiPdf()">Exporter KPI PDF</button>
+          <button class="secondary" (click)="exportAccountingListExcel('COMPTABILISE')" [disabled]="comptabiliseCount === 0">Excel comptabilise</button>
+          <button class="secondary" (click)="exportAccountingListExcel('RISQUE')" [disabled]="accountingRiskCount === 0">Excel risque</button>
         </div>
         <div class="dashboard-kpi-strip" *ngIf="accountingView === 'CURRENT'">
           <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Comptabilise</span><strong>{{ comptabiliseCount }}</strong></article>
@@ -722,7 +749,7 @@
             </tr>
             </thead>
             <tbody>
-            <tr *ngFor="let row of filteredAccountingRows">
+            <tr *ngFor="let row of paginatedAccountingRows">
               <td>{{ row.accountingDateRaw || '-' }}</td>
               <td>{{ row.valueDateRaw || '-' }}</td>
               <td>{{ row.phoneNumber || '-' }}</td>
@@ -741,6 +768,11 @@
             </tbody>
           </table>
         </div>
+        <div class="table-pagination" *ngIf="accountingView === 'CURRENT' && filteredAccountingRows.length > 0">
+          <button class="page-btn" (click)="goTablePage('accounting-current', filteredAccountingRows, tablePage('accounting-current') - 1)" [disabled]="tablePage('accounting-current') <= 1">Precedent</button>
+          <span>Page {{ tablePage('accounting-current') }} / {{ tableTotalPages(filteredAccountingRows) }} ({{ filteredAccountingRows.length }} lignes)</span>
+          <button class="page-btn" (click)="goTablePage('accounting-current', filteredAccountingRows, tablePage('accounting-current') + 1)" [disabled]="tablePage('accounting-current') >= tableTotalPages(filteredAccountingRows)">Suivant</button>
+        </div>
         <div class="table-wrap" *ngIf="accountingView === 'HISTORY'">
           <table>
             <thead>
@@ -749,7 +781,7 @@
             </tr>
             </thead>
             <tbody>
-            <tr *ngFor="let row of accountingHistoryRows" [class.soft-failure-row]="row.nonComptabilizedTransactions > 0">
+            <tr *ngFor="let row of paginatedAccountingHistoryRows" [class.soft-failure-row]="row.nonComptabilizedTransactions > 0">
               <td>{{ row.businessDate }}</td>
               <td>{{ row.totalTransactions }}</td>
               <td>{{ row.totalAmount | number : '1.0-2' }}</td>
@@ -767,6 +799,11 @@
             <tr *ngIf="accountingHistoryRows.length === 0"><td colspan="10">Aucune donnee comptable sur la periode.</td></tr>
             </tbody>
           </table>
+        </div>
+        <div class="table-pagination" *ngIf="accountingView === 'HISTORY' && accountingHistoryRows.length > 0">
+          <button class="page-btn" (click)="goTablePage('accounting-history', accountingHistoryRows, tablePage('accounting-history') - 1)" [disabled]="tablePage('accounting-history') <= 1">Precedent</button>
+          <span>Page {{ tablePage('accounting-history') }} / {{ tableTotalPages(accountingHistoryRows) }} ({{ accountingHistoryRows.length }} lignes)</span>
+          <button class="page-btn" (click)="goTablePage('accounting-history', accountingHistoryRows, tablePage('accounting-history') + 1)" [disabled]="tablePage('accounting-history') >= tableTotalPages(accountingHistoryRows)">Suivant</button>
         </div>
       </section>
     </div>
