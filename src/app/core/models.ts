@@ -144,6 +144,7 @@ export type ReconciliationResultType =
   | 'ABSENT_COTE_MOOV'
   | 'ABSENT_COTE_ORANGE'
   | 'ABSENT_COTE_BANQUE'
+  | 'OPERATEUR_ABOUTI_SANS_CARTHAGO'
   | 'OPERATEUR_NON_ABOUTI_SANS_BANQUE'
   | 'MONTANT_DIFFERENT'
   | 'DOUBLON_BANQUE'
@@ -351,11 +352,11 @@ export interface CompensationDiscrepancy {
   reason?: string | null;
 }
 
-export type AccountingStatus = 'COMPTABILISE' | 'NON_COMPTABILISE';
+export type AccountingStatus = 'COMPTABILISE' | 'NON_COMPTABILISE' | 'AMPLITUDE_SANS_CARTHAGO';
 
 export interface AccountingCheckRow {
-  bankTransactionId: number;
-  transactionId: string;
+  bankTransactionId?: number | null;
+  transactionId?: string | null;
   operationDate?: string | null;
   amount?: number | null;
   amplitudeCredit?: number | null;
@@ -367,6 +368,7 @@ export interface AccountingCheckRow {
   pieceNumber?: string | null;
   eventNumber?: string | null;
   phoneNumber?: string | null;
+  operationNature?: 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BANK_TO_MOOV' | 'MOOV_TO_BANK' | string | null;
   status: AccountingStatus;
 }
 

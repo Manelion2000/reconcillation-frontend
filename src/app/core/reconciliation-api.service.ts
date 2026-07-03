@@ -66,9 +66,12 @@ export class ReconciliationApiService {
   deleteImportsBySourceAndDate(
     sourceType: 'BANQUE' | 'MOOV' | 'ORANGE' | 'AMPLITUDE',
     businessDate: string,
-    operator?: 'MOOV' | 'ORANGE' | null
+    operator?: 'MOOV' | 'ORANGE' | null,
+    confirmCascade = false
   ): Observable<ImportBulkDeletionResult> {
-    let params = new HttpParams().set('businessDate', businessDate);
+    let params = new HttpParams()
+      .set('businessDate', businessDate)
+      .set('confirmCascade', String(confirmCascade));
     if (operator) {
       params = params.set('operator', operator);
     }
@@ -89,9 +92,10 @@ export class ReconciliationApiService {
 
   deleteAllImportsBySource(
     sourceType: 'BANQUE' | 'MOOV' | 'ORANGE' | 'AMPLITUDE',
-    operator?: 'MOOV' | 'ORANGE' | null
+    operator?: 'MOOV' | 'ORANGE' | null,
+    confirmCascade = false
   ): Observable<ImportFullDeletionResult> {
-    let params = new HttpParams();
+    let params = new HttpParams().set('confirmCascade', String(confirmCascade));
     if (operator) {
       params = params.set('operator', operator);
     }

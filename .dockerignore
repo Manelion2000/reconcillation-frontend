@@ -1,0 +1,14 @@
+.git
+.idea
+.angular
+.vscode
+.codex-build-check
+.codex-chrome-profile
+.codex-prod-check
+.codex-prod-check-2
+node_modules
+dist
+coverage
+*.log
+*.png
+Dockerfile

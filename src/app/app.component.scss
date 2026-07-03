@@ -2322,6 +2322,11 @@ input[type="file"]::file-selector-button {
   justify-content: flex-end;
 }
 
+.modal-feedback {
+  margin: 14px 0 0;
+  font-weight: 700;
+}
+
 .modal-actions button {
   min-height: 38px;
 }

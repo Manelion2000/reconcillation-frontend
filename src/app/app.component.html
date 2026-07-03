@@ -298,6 +298,11 @@
                 </select>
               </label>
               <label>Date reference <input type="date" [(ngModel)]="reportingReferenceDate" /></label>
+              <label>Type operation
+                <select [(ngModel)]="reportingOperationFilter" (ngModelChange)="onReportingOperationFilterChange()">
+                  <option *ngFor="let o of operationOptions" [ngValue]="o">{{ operationOptionLabels[o] }}</option>
+                </select>
+              </label>
               <button class="primary" (click)="loadReportingSummary()" [disabled]="reportingLoading || !reportingPeriodType || !reportingReferenceDate">Generer</button>
               <button class="ghost" (click)="resetReportingFilters()">Reinitialiser</button>
               <button class="secondary" (click)="exportReportingExcel()" [disabled]="!reportingSummary">Excel</button>
@@ -320,15 +325,16 @@
               <button
                 type="button"
                 class="dist-row dist-action"
-                *ngFor="let item of report.distribution"
+                *ngFor="let item of reportingDistributionRows"
                 [class.active]="selectedReportingResultType === item.resultType"
                 (click)="selectReportingResultType(item.resultType)">
                 <span><span class="status-pill compact" [ngClass]="statusClass(item.resultType)"><span class="status-icon">{{ statusIcon(item.resultType) }}</span>{{ statusLabel(item.resultType) }}</span></span>
                 <div class="bar-wrap">
-                  <div class="bar dist" [style.width.%]="(item.count * 100) / (report.kpis.totalTransactions || 1)"></div>
+                  <div class="bar dist" [style.width.%]="(item.count * 100) / (reportingDistributionTotal || 1)"></div>
                 </div>
                 <b>{{ item.count }}</b>
               </button>
+              <div class="empty-state" *ngIf="reportingDistributionRows.length === 0">Aucune operation pour ce filtre.</div>
             </div>
             <div class="dashboard-block">
               <h3>Timeline Reporting</h3>
@@ -531,9 +537,14 @@
               <option [ngValue]="10">Octobre</option><option [ngValue]="11">Novembre</option><option [ngValue]="12">Decembre</option>
             </select>
           </label>
+          <label>Type operation
+            <select [(ngModel)]="compensationOperationFilter" (ngModelChange)="onCompensationOperationFilterChange()">
+              <option *ngFor="let o of operationOptions" [ngValue]="o">{{ operationOptionLabels[o] }}</option>
+            </select>
+          </label>
 
           <button class="primary" (click)="loadCompensation()" [disabled]="!canLoadCompensation">Appliquer</button>
-          <button class="secondary" (click)="exportCompensationCsv()" [disabled]="!compensationRows.length && !compensationDiscrepancies.length">Exporter CSV</button>
+          <button class="secondary" (click)="exportCompensationCsv()" [disabled]="!activeCompensationRows.length && !filteredCompensationDiscrepancies.length">Exporter CSV</button>
         </div>
 
         <div class="compensation-summary">
@@ -557,12 +568,12 @@
             <article class="dashboard-kpi-tile" [ngClass]="compensationNetGap === 0 ? 'kpi-soft-green' : 'kpi-soft-red'">
               <span class="label">Ecart net</span>
               <strong>{{ compensationNetGap | number : '1.0-2' }}</strong>
-              <small>Banque - operateur</small>
+              <small>{{ compensationBankCount }} tx Carthago / {{ compensationOperatorCount }} tx {{ activeOperatorLabel }}</small>
             </article>
             <article class="dashboard-kpi-tile" [ngClass]="riskTotalCount === 0 ? 'kpi-soft-green' : 'kpi-soft-orange'">
               <span class="label">Operations a justifier</span>
               <strong>{{ riskTotalCount }}</strong>
-              <small>{{ compensationDiscrepancies.length }} ecarts charges</small>
+              <small>{{ filteredCompensationDiscrepancies.length }} ecarts charges</small>
             </article>
           </div>
         </div>
@@ -586,14 +597,14 @@
                 <td>{{ row.difference | number : '1.0-2' }}</td>
                 <td><span class="status-pill" [ngClass]="statusClass(row.decision)"><span class="status-icon">{{ statusIcon(row.decision) }}</span>{{ statusLabel(row.decision) }}</span></td>
               </tr>
-              <tr *ngIf="compensationRows.length === 0"><td colspan="8">Aucune donnee de compensation.</td></tr>
+              <tr *ngIf="activeCompensationRows.length === 0"><td colspan="8">Aucune donnee de compensation.</td></tr>
             </tbody>
           </table>
           </div>
-          <div class="table-pagination" *ngIf="compensationRows.length > 0">
-            <button class="page-btn" (click)="goTablePage('compensation-position', compensationRows, tablePage('compensation-position') - 1)" [disabled]="tablePage('compensation-position') <= 1">Precedent</button>
-            <span>Page {{ tablePage('compensation-position') }} / {{ tableTotalPages(compensationRows) }} ({{ compensationRows.length }} lignes)</span>
-            <button class="page-btn" (click)="goTablePage('compensation-position', compensationRows, tablePage('compensation-position') + 1)" [disabled]="tablePage('compensation-position') >= tableTotalPages(compensationRows)">Suivant</button>
+          <div class="table-pagination" *ngIf="activeCompensationRows.length > 0">
+            <button class="page-btn" (click)="goTablePage('compensation-position', activeCompensationRows, tablePage('compensation-position') - 1)" [disabled]="tablePage('compensation-position') <= 1">Precedent</button>
+            <span>Page {{ tablePage('compensation-position') }} / {{ tableTotalPages(activeCompensationRows) }} ({{ activeCompensationRows.length }} lignes)</span>
+            <button class="page-btn" (click)="goTablePage('compensation-position', activeCompensationRows, tablePage('compensation-position') + 1)" [disabled]="tablePage('compensation-position') >= tableTotalPages(activeCompensationRows)">Suivant</button>
           </div>
         </div>
 
@@ -603,17 +614,15 @@
             <label>Filtre risque
               <select [(ngModel)]="compensationRiskFilter">
                 <option [ngValue]="'ALL'">Tous</option>
-                <option [ngValue]="'ABSENT_OPERATEUR'">Absent operateur</option>
-                <option [ngValue]="'ABSENT_BANQUE'">Absent banque</option>
-                <option [ngValue]="'ECHEC_DEUX_COTES'">Echec des deux cotes</option>
+                <option [ngValue]="'ABSENT_OPERATEUR'">Abouti Carthago absent operateur</option>
+                <option [ngValue]="'ABSENT_BANQUE'">Abouti operateur absent Carthago</option>
               </select>
             </label>
           </div>
           <div class="dashboard-kpi-strip">
-            <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Absent operateur</span><strong>{{ riskAbsentOperatorCount }}</strong><small>Impact Banque: {{ riskAbsentOperatorBankAmount | number : '1.0-2' }}</small></article>
-            <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Absent banque</span><strong>{{ riskAbsentBankCount }}</strong><small>Impact {{ activeOperatorLabel }}: {{ riskAbsentBankOperatorAmount | number : '1.0-2' }}</small></article>
-            <article class="dashboard-kpi-tile kpi-soft-yellow"><span class="label">Echec 2 cotes</span><strong>{{ riskEchecDeuxCotesCount }}</strong><small>Montant Banque: {{ riskEchecDeuxCotesBankAmount | number : '1.0-2' }}</small></article>
-            <article class="dashboard-kpi-tile accounting-total"><span class="label">Total risques</span><strong>{{ riskTotalCount }}</strong></article>
+            <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Carthago abouti absent operateur</span><strong>{{ riskAbsentOperatorCount }}</strong><small>Impact Carthago: {{ riskAbsentOperatorBankAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">{{ activeOperatorLabel }} abouti absent Carthago</span><strong>{{ riskAbsentBankCount }}</strong><small>Impact {{ activeOperatorLabel }}: {{ riskAbsentBankOperatorAmount | number : '1.0-2' }}</small></article>
+            <article class="dashboard-kpi-tile accounting-total"><span class="label">Operations a justifier</span><strong>{{ riskTotalCount }}</strong><small>Abouties mais absentes d'un cote</small></article>
           </div>
           <div class="table-wrap">
             <table>
@@ -669,6 +678,11 @@
               <option [ngValue]="'RANGE'">Entre deux dates</option>
             </select>
           </label>
+          <label>Type operation
+            <select [(ngModel)]="accountingOperationFilter" (ngModelChange)="onAccountingOperationFilterChange()">
+              <option *ngFor="let option of operationOptions" [ngValue]="option">{{ operationOptionLabels[option] }}</option>
+            </select>
+          </label>
           <label *ngIf="accountingMode === 'DAILY'">Date <input type="date" [(ngModel)]="accountingDate" /></label>
           <label *ngIf="accountingMode === 'WEEKLY'">Date reference semaine <input type="date" [(ngModel)]="accountingWeekReferenceDate" /></label>
           <label *ngIf="accountingMode === 'RANGE'">Date debut <input type="date" [(ngModel)]="accountingDateFrom" /></label>
@@ -691,7 +705,8 @@
           <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Comptabilise</span><strong>{{ comptabiliseCount }}</strong></article>
           <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Non Comptabilise</span><strong>{{ nonComptabiliseCount }}</strong></article>
           <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Operations a risque</span><strong>{{ accountingRiskCount }}</strong></article>
-          <article class="dashboard-kpi-tile accounting-total"><span class="label">Total alloue {{ accountingOperatorLabel }}</span><strong>{{ accountingRows.length }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">AMPLITUDE sans Carthago</span><strong>{{ accountingAmplitudeSansCarthagoCount }}</strong><small>Montant: {{ accountingAmplitudeSansCarthagoAmount | number : '1.0-2' }}</small></article>
+          <article class="dashboard-kpi-tile accounting-total"><span class="label">Total Carthago alloue {{ accountingOperatorLabel }}</span><strong>{{ accountingCarthagoRowsCount }}</strong></article>
         </div>
         <div class="dashboard-kpi-strip" *ngIf="accountingView === 'HISTORY'">
           <article class="dashboard-kpi-tile accounting-total"><span class="label">Total controle</span><strong>{{ accountingHistoryTotals.totalTransactions }}</strong><small>Montant: {{ accountingHistoryTotals.totalAmount | number : '1.0-2' }}</small></article>
@@ -705,6 +720,7 @@
               <option [ngValue]="'ALL'">Tous</option>
               <option [ngValue]="'COMPTABILISE'">Comptabilise</option>
               <option [ngValue]="'NON_COMPTABILISE'">Non comptabilise</option>
+              <option [ngValue]="'AMPLITUDE_SANS_CARTHAGO'">AMPLITUDE sans Carthago</option>
               <option [ngValue]="'A_RISQUE'">A risque</option>
             </select>
           </label>
@@ -713,49 +729,46 @@
           <label>Reference <input type="text" [(ngModel)]="accountingSearchReference" placeholder="Recherche reference" /></label>
           <label>Transaction ID <input type="text" [(ngModel)]="accountingSearchTransactionId" placeholder="Recherche transaction" /></label>
         </div>
-        <div class="dashboard-kpi-strip" *ngIf="accountingView === 'CURRENT' && accountingKpi as k">
+        <div class="dashboard-kpi-strip" *ngIf="accountingView === 'CURRENT'">
           <article class="dashboard-kpi-tile kpi-soft-green">
             <span class="label">Volume Carthago alloue {{ accountingOperatorLabel }}</span>
-            <strong>{{ k.totalTransactions }}</strong>
-            <small>Montant: {{ k.totalAmount | number : '1.0-2' }}</small>
+            <strong>{{ accountingCarthagoRowsCount }}</strong>
+            <small>Montant: {{ accountingCarthagoRowsAmount | number : '1.0-2' }}</small>
           </article>
           <article class="dashboard-kpi-tile kpi-soft-green">
             <span class="label">Operations comptabilisees</span>
-            <strong>{{ k.comptabilizedTransactions }}</strong>
-            <small>Montant: {{ k.comptabilizedAmount | number : '1.0-2' }}</small>
-            <small>Taux nb: {{ k.comptabilizationRateCount | number : '1.0-2' }}%</small>
-            <small>Taux montant: {{ k.comptabilizationRateAmount | number : '1.0-2' }}%</small>
+            <strong>{{ comptabiliseCount }}</strong>
+            <small>Montant: {{ accountingComptabiliseAmount | number : '1.0-2' }}</small>
           </article>
           <article class="dashboard-kpi-tile kpi-soft-red">
             <span class="label">Operations non comptabilisees</span>
-            <strong>{{ k.nonComptabilizedTransactions }}</strong>
-            <small>Montant: {{ k.nonComptabilizedAmount | number : '1.0-2' }}</small>
-            <small>Taux: {{ k.nonComptabilizationRateCount | number : '1.0-2' }}%</small>
-            <small>Montant a risque: {{ k.amountAtRisk | number : '1.0-2' }}</small>
+            <strong>{{ nonComptabiliseCount }}</strong>
+            <small>Montant: {{ accountingNonComptabiliseAmount | number : '1.0-2' }}</small>
+            <small>AMPLITUDE sans Carthago: {{ accountingAmplitudeSansCarthagoCount }}</small>
           </article>
           <article class="dashboard-kpi-tile kpi-soft-orange">
             <span class="label">Ecart financier</span>
-            <strong>{{ k.netGapAmount | number : '1.0-2' }}</strong>
-            <small>Ecart absolu total: {{ k.absoluteGapAmount | number : '1.0-2' }}</small>
-            <small>Tx avec ecart: {{ k.transactionsWithGapCount }}</small>
-            <small>Montant total ecarts: {{ k.totalGapAmount | number : '1.0-2' }}</small>
+            <strong>{{ accountingNetGapAmount | number : '1.0-2' }}</strong>
+            <small>Carthago: {{ accountingCarthagoRowsCount }} tx</small>
+            <small>AMPLITUDE sans Carthago: {{ accountingAmplitudeSansCarthagoCount }} tx</small>
           </article>
         </div>
         <div class="table-wrap" *ngIf="accountingView === 'CURRENT'">
           <table>
             <thead>
             <tr>
-              <th>Date compta</th><th>Date valeur</th><th>Tel AMPLITUDE</th><th>Tel Carthago {{ accountingOperatorLabel }}</th><th>Reference operation</th><th>Transaction ID</th><th>Date operation</th><th>Montant Carthago</th><th>Credit AMPLITUDE</th><th>Compte</th><th>Statut</th>
+              <th>Date compta</th><th>Date valeur</th><th>Sens</th><th>Tel AMPLITUDE</th><th>Tel Carthago {{ accountingOperatorLabel }}</th><th>Reference operation</th><th>Transaction ID</th><th>Date operation</th><th>Montant Carthago</th><th>Credit AMPLITUDE</th><th>Compte</th><th>Statut</th>
             </tr>
             </thead>
             <tbody>
             <tr *ngFor="let row of paginatedAccountingRows">
               <td>{{ row.accountingDateRaw || '-' }}</td>
               <td>{{ row.valueDateRaw || '-' }}</td>
+              <td>{{ accountingOperationLabel(row) }}</td>
               <td>{{ row.phoneNumber || '-' }}</td>
               <td>{{ row.bankPhoneNumber || '-' }}</td>
               <td>{{ row.operationReference || '-' }}</td>
-              <td>{{ row.transactionId }}</td>
+              <td>{{ row.transactionId || '-' }}</td>
               <td>{{ row.operationDate || '-' }}</td>
               <td>{{ row.amount ?? '-' }}</td>
               <td>{{ row.amplitudeCredit ?? '-' }}</td>
@@ -764,7 +777,7 @@
                 <span class="status-pill" [ngClass]="statusClass(row.status)"><span class="status-icon">{{ statusIcon(row.status) }}</span>{{ statusLabel(row.status) }}</span>
               </td>
             </tr>
-            <tr *ngIf="filteredAccountingRows.length === 0"><td colspan="11">Aucune donnee sur la periode.</td></tr>
+            <tr *ngIf="filteredAccountingRows.length === 0"><td colspan="12">Aucune donnee sur la periode.</td></tr>
             </tbody>
           </table>
         </div>
@@ -880,6 +893,9 @@
           </div>
         </section>
       </div>
+
+      <p class="ok modal-feedback" *ngIf="message">{{ message }}</p>
+      <p class="error modal-feedback" *ngIf="error">{{ error }}</p>
 
       <div class="actions modal-actions">
         <button class="primary" type="button" (click)="importBankOnly()" [disabled]="loading || !businessDate || !selectedBankFileName">Uploader Banque</button>

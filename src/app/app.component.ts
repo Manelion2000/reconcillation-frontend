@@ -119,7 +119,8 @@ export class AppComponent implements OnInit {
   accountingWeekReferenceDate = new Date().toISOString().slice(0, 10);
   accountingMonth = new Date().getMonth() + 1;
   accountingRows: AccountingCheckRow[] = [];
-  accountingStatusFilter: 'ALL' | 'COMPTABILISE' | 'NON_COMPTABILISE' | 'A_RISQUE' = 'ALL';
+  accountingStatusFilter: 'ALL' | 'COMPTABILISE' | 'NON_COMPTABILISE' | 'AMPLITUDE_SANS_CARTHAGO' | 'A_RISQUE' = 'ALL';
+  accountingOperationFilter: 'ALL' | 'BANK_TO_WALLET' | 'WALLET_TO_BANK' = 'ALL';
   accountingSearchPhone = '';
   accountingSearchAccount = '';
   accountingSearchReference = '';
@@ -157,6 +158,7 @@ export class AppComponent implements OnInit {
   reportingSummary?: ReportingSummary;
   reportingLoading = false;
   selectedReportingResultType: DashboardResultTypeView | 'ALL' = 'ALL';
+  reportingOperationFilter: 'ALL' | 'BANK_TO_WALLET' | 'WALLET_TO_BANK' = 'ALL';
   dashboardTimeline: DashboardTimelinePoint[] = [];
   dashboardDataQuality?: DataQuality;
   dashboardTopAnomalies: Array<{
@@ -173,6 +175,8 @@ export class AppComponent implements OnInit {
   compensationRows: CompensationDaily[] = [];
   compensationDiscrepancies: CompensationDiscrepancy[] = [];
   compensationRiskFilter: 'ALL' | 'ABSENT_OPERATEUR' | 'ABSENT_BANQUE' | 'ECHEC_DEUX_COTES' = 'ALL';
+  compensationOperationFilter: 'ALL' | 'BANK_TO_WALLET' | 'WALLET_TO_BANK' = 'ALL';
+  compensationResultRows: ReconciliationResult[] = [];
   compensationPeriod?: CompensationPeriodResponse;
   compensationMode: 'DAILY' | 'WEEKLY' | 'MONTHLY' = 'DAILY';
   compensationDateMode: 'SINGLE' | 'RANGE' = 'SINGLE';
@@ -371,8 +375,6 @@ export class AppComponent implements OnInit {
         this.message = this.buildImportSuccessMessage('Banque', imports, scope);
         delete this.bankFiles[this.selectedOperator];
         this.clearBankFileInput();
-        this.uploadDialogOpen = false;
-        this.openDialog('success', 'Import Banque termine', this.message);
         this.loading = false;
         this.loadRuns();
         this.loadSummaryAndResults();
@@ -407,8 +409,6 @@ export class AppComponent implements OnInit {
         this.message = this.buildImportSuccessMessage('Moov', imports);
         this.moovFiles = [];
         this.clearMoovFileInput();
-        this.uploadDialogOpen = false;
-        this.openDialog('success', 'Import Moov termine', this.message);
         this.loading = false;
         this.loadRuns();
         this.loadSummaryAndResults();
@@ -435,8 +435,6 @@ export class AppComponent implements OnInit {
         this.message = this.buildImportSuccessMessage('Orange', imports);
         this.orangeFiles = [];
         this.clearOrangeFileInput();
-        this.uploadDialogOpen = false;
-        this.openDialog('success', 'Import Orange termine', this.message);
         this.loading = false;
         this.loadRuns();
         this.loadSummaryAndResults();
@@ -530,6 +528,11 @@ export class AppComponent implements OnInit {
     });
   }
 
+  onAccountingOperationFilterChange(): void {
+    this.resetTablePage('accounting-current');
+    this.resetTablePage('accounting-history');
+  }
+
   private applyAccountingLastSevenDays(referenceDate?: string): void {
     const end = referenceDate ? new Date(referenceDate + 'T00:00:00') : new Date();
     const start = new Date(end);
@@ -606,9 +609,10 @@ export class AppComponent implements OnInit {
   }
 
   exportAccountingListExcel(type: 'COMPTABILISE' | 'RISQUE'): void {
+    const baseRows = this.accountingRowsByOperationFilter;
     const rows = type === 'COMPTABILISE'
-      ? this.accountingRows.filter((row) => row.status === 'COMPTABILISE')
-      : this.accountingRows.filter((row) => this.isAccountingRisk(row));
+      ? baseRows.filter((row) => row.status === 'COMPTABILISE')
+      : baseRows.filter((row) => this.isAccountingRisk(row));
     if (!rows.length) {
       this.error = type === 'COMPTABILISE'
         ? 'Aucune operation comptabilisee a exporter.'
@@ -617,10 +621,11 @@ export class AppComponent implements OnInit {
     }
     this.error = '';
     const title = type === 'COMPTABILISE' ? 'Operations comptabilisees' : 'Operations a risque';
-    const headers = ['Date compta', 'Date valeur', 'Tel AMPLITUDE', `Tel Carthago ${this.accountingOperatorLabel}`, 'Reference operation', 'Transaction ID', 'Date operation', 'Montant Carthago', 'Credit AMPLITUDE', 'Compte', 'Statut'];
+    const headers = ['Date compta', 'Date valeur', 'Sens', 'Tel AMPLITUDE', `Tel Carthago ${this.accountingOperatorLabel}`, 'Reference operation', 'Transaction ID', 'Date operation', 'Montant Carthago', 'Credit AMPLITUDE', 'Compte', 'Statut'];
     const body = rows.map((row) => [
       row.accountingDateRaw || '',
       row.valueDateRaw || '',
+      this.accountingOperationLabel(row),
       row.phoneNumber || '',
       row.bankPhoneNumber || '',
       row.operationReference || '',
@@ -671,20 +676,55 @@ export class AppComponent implements OnInit {
   }
 
   get comptabiliseCount(): number {
-    return this.accountingRows.filter(r => r.status === 'COMPTABILISE').length;
+    return this.accountingRowsByOperationFilter.filter(r => r.status === 'COMPTABILISE').length;
   }
 
   get nonComptabiliseCount(): number {
-    return this.accountingRows.filter(r => r.status === 'NON_COMPTABILISE').length;
+    return this.accountingRowsByOperationFilter.filter(r => r.status === 'NON_COMPTABILISE').length;
   }
 
   get accountingRiskCount(): number {
-    return this.accountingRows.filter((r) => this.isAccountingRisk(r)).length;
+    return this.accountingRowsByOperationFilter.filter((r) => this.isAccountingRisk(r)).length;
+  }
+
+  get accountingAmplitudeSansCarthagoCount(): number {
+    return this.accountingRowsByOperationFilter.filter(r => r.status === 'AMPLITUDE_SANS_CARTHAGO').length;
+  }
+
+  get accountingCarthagoRowsCount(): number {
+    return this.accountingRowsByOperationFilter.filter(r => r.bankTransactionId != null).length;
+  }
+
+  get accountingCarthagoRowsAmount(): number {
+    return this.sumAccountingAmount(this.accountingRowsByOperationFilter.filter(r => r.bankTransactionId != null), 'amount');
+  }
+
+  get accountingComptabiliseAmount(): number {
+    return this.sumAccountingAmount(this.accountingRowsByOperationFilter.filter(r => r.status === 'COMPTABILISE'), 'amount');
+  }
+
+  get accountingNonComptabiliseAmount(): number {
+    return this.sumAccountingAmount(this.accountingRowsByOperationFilter.filter(r => r.status === 'NON_COMPTABILISE'), 'amount');
+  }
+
+  get accountingAmplitudeSansCarthagoAmount(): number {
+    return this.sumAccountingAmount(this.accountingRowsByOperationFilter.filter(r => r.status === 'AMPLITUDE_SANS_CARTHAGO'), 'amplitudeCredit');
+  }
+
+  get accountingNetGapAmount(): number {
+    return this.accountingRowsByOperationFilter.reduce((sum, row) => sum + Number(row.amount ?? 0) - Number(row.amplitudeCredit ?? 0), 0);
+  }
+
+  get accountingRowsByOperationFilter(): AccountingCheckRow[] {
+    if (this.accountingOperationFilter === 'ALL') {
+      return this.accountingRows;
+    }
+    return this.accountingRows.filter((row) => this.accountingOperationType(row) === this.accountingOperationFilter);
   }
 
   get accountingHistoryRows(): AccountingHistoryRow[] {
     const rowsByDate = new Map<string, AccountingCheckRow[]>();
-    for (const row of this.accountingRows) {
+    for (const row of this.accountingRowsByOperationFilter) {
       const businessDate = (row.operationDate || row.accountingDateRaw || '-').slice(0, 10);
       rowsByDate.set(businessDate, [...(rowsByDate.get(businessDate) ?? []), row]);
     }
@@ -694,7 +734,7 @@ export class AppComponent implements OnInit {
         const totalTransactions = rows.length;
         const totalAmount = this.sumAccountingAmount(rows, 'amount');
         const comptabilizedRows = rows.filter((row) => row.status === 'COMPTABILISE');
-        const nonComptabilizedRows = rows.filter((row) => row.status === 'NON_COMPTABILISE');
+        const nonComptabilizedRows = rows.filter((row) => row.status === 'NON_COMPTABILISE' || row.status === 'AMPLITUDE_SANS_CARTHAGO');
         const comptabilizedTransactions = comptabilizedRows.length;
         const comptabilizedAmount = this.sumAccountingAmount(comptabilizedRows, 'amount');
         const nonComptabilizedTransactions = nonComptabilizedRows.length;
@@ -740,7 +780,7 @@ export class AppComponent implements OnInit {
   }
 
   exportAccountingHistoryDateCsv(row: AccountingHistoryRow): void {
-    const rows = this.accountingRows.filter((item) => (item.operationDate || item.accountingDateRaw || '-').slice(0, 10) === row.businessDate);
+    const rows = this.accountingRowsByOperationFilter.filter((item) => (item.operationDate || item.accountingDateRaw || '-').slice(0, 10) === row.businessDate);
     if (!rows.length) {
       this.error = 'Aucune ligne comptable a exporter pour cette date.';
       return;
@@ -750,9 +790,9 @@ export class AppComponent implements OnInit {
     csvRows.push(['Total', 'Montant total', 'Comptabilisees', 'Montant comptabilise', 'Non comptabilisees', 'Montant a risque', 'Taux comptabilisation'].map((value) => this.csvCell(value)).join(';'));
     csvRows.push([row.totalTransactions, row.totalAmount, row.comptabilizedTransactions, row.comptabilizedAmount, row.nonComptabilizedTransactions, row.amountAtRisk, `${this.formatNumber(row.comptabilizationRate)}%`].map((value) => this.csvCell(value)).join(';'));
     csvRows.push('');
-    csvRows.push(['Date compta', 'Date valeur', 'Tel AMPLITUDE', `Tel Carthago ${this.accountingOperatorLabel}`, 'Reference operation', 'Transaction ID', 'Date operation', 'Montant Carthago', 'Credit AMPLITUDE', 'Compte', 'Statut'].map((value) => this.csvCell(value)).join(';'));
+    csvRows.push(['Date compta', 'Date valeur', 'Sens', 'Tel AMPLITUDE', `Tel Carthago ${this.accountingOperatorLabel}`, 'Reference operation', 'Transaction ID', 'Date operation', 'Montant Carthago', 'Credit AMPLITUDE', 'Compte', 'Statut'].map((value) => this.csvCell(value)).join(';'));
     for (const item of rows) {
-      csvRows.push([item.accountingDateRaw || '', item.valueDateRaw || '', item.phoneNumber || '', item.bankPhoneNumber || '', item.operationReference || '', item.transactionId || '', item.operationDate || '', item.amount ?? '', item.amplitudeCredit ?? '', item.accountNumber || '', this.statusLabel(item.status)].map((value) => this.csvCell(value)).join(';'));
+      csvRows.push([item.accountingDateRaw || '', item.valueDateRaw || '', this.accountingOperationLabel(item), item.phoneNumber || '', item.bankPhoneNumber || '', item.operationReference || '', item.transactionId || '', item.operationDate || '', item.amount ?? '', item.amplitudeCredit ?? '', item.accountNumber || '', this.statusLabel(item.status)].map((value) => this.csvCell(value)).join(';'));
     }
     const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     this.downloadBlob(blob, `historique-comptabilisation-${this.accountingOperator.toLowerCase()}-${row.businessDate}.csv`);
@@ -764,10 +804,11 @@ export class AppComponent implements OnInit {
     const ref = this.accountingSearchReference.trim().toLowerCase();
     const txId = this.accountingSearchTransactionId.trim().toLowerCase();
 
-    return this.accountingRows
+    return this.accountingRowsByOperationFilter
       .filter((r) => {
         if (this.accountingStatusFilter === 'COMPTABILISE') return r.status === 'COMPTABILISE';
         if (this.accountingStatusFilter === 'NON_COMPTABILISE') return r.status === 'NON_COMPTABILISE';
+        if (this.accountingStatusFilter === 'AMPLITUDE_SANS_CARTHAGO') return r.status === 'AMPLITUDE_SANS_CARTHAGO';
         if (this.accountingStatusFilter === 'A_RISQUE') return this.isAccountingRisk(r);
         return true;
       })
@@ -786,7 +827,7 @@ export class AppComponent implements OnInit {
   }
 
   get paginatedCompensationRows(): CompensationDaily[] {
-    return this.paginateRows(this.compensationRows, 'compensation-position');
+    return this.paginateRows(this.activeCompensationRows, 'compensation-position');
   }
 
   get paginatedCompensationDiscrepancies(): CompensationDiscrepancy[] {
@@ -806,6 +847,7 @@ export class AppComponent implements OnInit {
   }
 
   private isAccountingRisk(row: AccountingCheckRow): boolean {
+    if (row.status === 'AMPLITUDE_SANS_CARTHAGO') return true;
     if (row.status === 'NON_COMPTABILISE') return true;
     if (row.amount == null || row.amplitudeCredit == null) return false;
     return Number(row.amount) !== Number(row.amplitudeCredit);
@@ -813,6 +855,28 @@ export class AppComponent implements OnInit {
 
   private sumAccountingAmount(rows: AccountingCheckRow[], field: 'amount' | 'amplitudeCredit'): number {
     return rows.reduce((sum, row) => sum + Number(row[field] ?? 0), 0);
+  }
+
+  accountingOperationLabel(row: AccountingCheckRow): string {
+    const type = this.accountingOperationType(row);
+    if (type === 'BANK_TO_WALLET') return this.operationOptionLabels.BANK_TO_WALLET;
+    if (type === 'WALLET_TO_BANK') return this.operationOptionLabels.WALLET_TO_BANK;
+    return '-';
+  }
+
+  private accountingOperationType(row: AccountingCheckRow): 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BOTH' {
+    const raw = String(row.operationNature ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[-\s]+/g, '_')
+      .toUpperCase();
+    if (raw.includes('BANK_TO_WALLET') || raw.includes('BANK_TO_MOOV') || raw.includes('BANQUE_TO_WALLET') || raw.includes('BANQUE_VERS_WALLET')) {
+      return 'BANK_TO_WALLET';
+    }
+    if (raw.includes('WALLET_TO_BANK') || raw.includes('MOOV_TO_BANK') || raw.includes('WALLET_VERS_BANQUE')) {
+      return 'WALLET_TO_BANK';
+    }
+    return 'BOTH';
   }
 
   statusIcon(value: string | null | undefined): string {
@@ -831,6 +895,7 @@ export class AppComponent implements OnInit {
       MATCH_OK: 'Match',
       COMPTABILISE: 'Comptabilise',
       NON_COMPTABILISE: 'Non comptabilise',
+      AMPLITUDE_SANS_CARTHAGO: 'AMPLITUDE sans Carthago',
       DEBIT_A_TORT: 'Debit a tort',
       CREDIT_SANS_DEBIT: 'Credit sans debit',
       ECHEC_DES_DEUX_COTES: 'Echec 2 cotes',
@@ -907,7 +972,20 @@ export class AppComponent implements OnInit {
     this.message = '';
     this.loading = true;
     const cleanupOperator = this.cleanupSourceType === 'BANQUE' ? this.selectedOperator : null;
-    this.api.deleteImportsBySourceAndDate(this.cleanupSourceType, this.cleanupBusinessDate, cleanupOperator).subscribe({
+    const hasImpacts = (this.cleanupPreview?.impactedRuns ?? 0) > 0 || (this.cleanupPreview?.impactedResults ?? 0) > 0;
+    let confirmCascade = false;
+    if (hasImpacts) {
+      confirmCascade = window.confirm(
+        `Ces imports sont lies a ${this.cleanupPreview?.impactedRuns ?? 0} run(s) et ${this.cleanupPreview?.impactedResults ?? 0} resultat(s). Supprimer aussi ces donnees liees ?`
+      );
+      if (!confirmCascade) {
+        this.loading = false;
+        this.error = 'Suppression annulee: les imports sont lies a des runs/resultats.';
+        this.openDialog('info', 'Suppression annulee', this.error);
+        return;
+      }
+    }
+    this.api.deleteImportsBySourceAndDate(this.cleanupSourceType, this.cleanupBusinessDate, cleanupOperator, confirmCascade).subscribe({
       next: (result) => {
         this.message = `Nettoyage termine: ${result.sourceType} ${result.businessDate} -> imports=${result.deletedImports}, transactions=${result.deletedTransactions}, runs=${result.deletedRuns}, resultats=${result.deletedResults}.`;
         this.cleanupPreview = undefined;
@@ -917,6 +995,11 @@ export class AppComponent implements OnInit {
         this.loadSummaryAndResults();
       },
       error: (err) => {
+        if (this.isCascadeConflict(err)) {
+          this.loading = false;
+          this.confirmAndRetryCleanupByDate(cleanupOperator);
+          return;
+        }
         this.error = err?.error?.message || 'Echec du nettoyage par date.';
         this.openDialog('error', 'Echec nettoyage', this.error);
         this.loading = false;
@@ -946,11 +1029,84 @@ export class AppComponent implements OnInit {
         this.loadSummaryAndResults();
       },
       error: (err) => {
+        if (this.isCascadeConflict(err)) {
+          this.loading = false;
+          this.confirmAndRetryCleanupAll(cleanupOperator);
+          return;
+        }
         this.error = err?.error?.message || 'Echec de la suppression totale.';
         this.openDialog('error', 'Echec suppression totale', this.error);
         this.loading = false;
       }
     });
+  }
+
+  private confirmAndRetryCleanupByDate(cleanupOperator: OperatorType | null): void {
+    const confirmed = window.confirm('Des runs/resultats utilisent ces imports. Confirmer la suppression en cascade ?');
+    if (!confirmed) {
+      this.error = 'Suppression annulee: les imports sont lies a des runs/resultats.';
+      this.openDialog('info', 'Suppression annulee', this.error);
+      return;
+    }
+    this.loading = true;
+    this.api.deleteImportsBySourceAndDate(this.cleanupSourceType, this.cleanupBusinessDate, cleanupOperator, true).subscribe({
+      next: (result) => {
+        this.message = `Nettoyage termine: ${result.sourceType} ${result.businessDate} -> imports=${result.deletedImports}, transactions=${result.deletedTransactions}, runs=${result.deletedRuns}, resultats=${result.deletedResults}.`;
+        this.cleanupPreview = undefined;
+        this.openDialog('success', 'Nettoyage termine', this.message);
+        this.loading = false;
+        this.loadRuns();
+        this.loadSummaryAndResults();
+      },
+      error: (err) => {
+        this.error = this.extractErrorMessage(err) || 'Echec du nettoyage confirme.';
+        this.openDialog('error', 'Echec nettoyage', this.error);
+        this.loading = false;
+      }
+    });
+  }
+
+  private confirmAndRetryCleanupAll(cleanupOperator: OperatorType | null): void {
+    const confirmed = window.confirm('Des runs/resultats utilisent ces imports. Confirmer la suppression totale en cascade ?');
+    if (!confirmed) {
+      this.error = 'Suppression annulee: les imports sont lies a des runs/resultats.';
+      this.openDialog('info', 'Suppression annulee', this.error);
+      return;
+    }
+    this.loading = true;
+    this.api.deleteAllImportsBySource(this.cleanupSourceType, cleanupOperator, true).subscribe({
+      next: (result) => {
+        const opScope = result.operatorScope ? ` ${result.operatorScope}` : '';
+        this.message = `Suppression totale terminee: ${result.sourceType}${opScope} -> imports=${result.deletedImports}, transactions=${result.deletedTransactions}, runs=${result.deletedRuns}, resultats=${result.deletedResults}.`;
+        this.cleanupPreview = undefined;
+        this.openDialog('success', 'Suppression totale terminee', this.message);
+        this.loading = false;
+        this.loadRuns();
+        this.loadSummaryAndResults();
+      },
+      error: (err) => {
+        this.error = this.extractErrorMessage(err) || 'Echec de la suppression totale confirmee.';
+        this.openDialog('error', 'Echec suppression totale', this.error);
+        this.loading = false;
+      }
+    });
+  }
+
+  private isCascadeConflict(err: unknown): boolean {
+    const status = Number((err as { status?: number })?.status);
+    return status === 409;
+  }
+
+  private extractErrorMessage(err: unknown): string {
+    const error = (err as { error?: unknown })?.error;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object' && 'message' in error) {
+      return String((error as { message?: unknown }).message ?? '');
+    }
+    if (err && typeof err === 'object' && 'message' in err) {
+      return String((err as { message?: unknown }).message ?? '');
+    }
+    return '';
   }
 
   previewCleanupByDate(): void {
@@ -1135,29 +1291,83 @@ export class AppComponent implements OnInit {
     this.reportingReferenceDate = '';
     this.reportingSummary = undefined;
     this.selectedReportingResultType = 'ALL';
+    this.reportingOperationFilter = 'ALL';
   }
 
   selectReportingResultType(type: DashboardResultTypeView): void {
     this.selectedReportingResultType = this.selectedReportingResultType === type ? 'ALL' : type;
+    this.resetTablePage('reporting-details');
   }
 
   clearReportingResultType(): void {
     this.selectedReportingResultType = 'ALL';
+    this.resetTablePage('reporting-details');
+  }
+
+  onReportingOperationFilterChange(): void {
+    this.resetTablePage('reporting-details');
   }
 
   get filteredReportingTransactionDetails(): ReportingTransactionDetail[] {
-    const rows = this.reportingSummary?.transactionDetails ?? [];
-    if (this.selectedReportingResultType === 'ALL') {
-      return rows;
+    return this.reportingRowsByOperationFilter.filter((row) =>
+      this.selectedReportingResultType === 'ALL' ? true : row.resultType === this.selectedReportingResultType
+    );
+  }
+
+  get reportingDistributionRows(): ResultDistribution[] {
+    if (this.reportingOperationFilter === 'ALL') {
+      return this.reportingSummary?.distribution ?? [];
     }
-    return rows.filter((row) => row.resultType === this.selectedReportingResultType);
+    const counts = new Map<DashboardResultTypeView, number>();
+    for (const row of this.reportingRowsByOperationFilter) {
+      counts.set(row.resultType, (counts.get(row.resultType) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([resultType, count]) => ({ resultType, count }))
+      .filter((item) => item.count > 0);
+  }
+
+  get reportingDistributionTotal(): number {
+    if (this.reportingOperationFilter === 'ALL') {
+      return this.reportingSummary?.kpis.totalTransactions || 0;
+    }
+    return this.reportingRowsByOperationFilter.length;
   }
 
   get reportingDetailsTitle(): string {
-    if (this.selectedReportingResultType === 'ALL') {
-      return 'Operations reporting';
+    const typeLabel = this.selectedReportingResultType === 'ALL'
+      ? 'Operations reporting'
+      : `Operations ${this.statusLabel(this.selectedReportingResultType)}`;
+    if (this.reportingOperationFilter === 'ALL') {
+      return typeLabel;
     }
-    return `Operations ${this.statusLabel(this.selectedReportingResultType)}`;
+    return `${typeLabel} - ${this.operationOptionLabels[this.reportingOperationFilter]}`;
+  }
+
+  private get reportingRowsByOperationFilter(): ReportingTransactionDetail[] {
+    const rows = this.reportingSummary?.transactionDetails ?? [];
+    if (this.reportingOperationFilter === 'ALL') {
+      return rows;
+    }
+    const operationType = this.reportingOperationFilter;
+    return rows.filter((row) => this.reportingRowMatchesOperation(row, operationType));
+  }
+
+  private reportingRowMatchesOperation(
+    row: ReportingTransactionDetail,
+    operationType: 'BANK_TO_WALLET' | 'WALLET_TO_BANK'
+  ): boolean {
+    const direction = (row.direction || '').toUpperCase();
+    if (operationType === 'BANK_TO_WALLET') {
+      return direction.includes('BANK_TO_WALLET')
+        || direction.includes('BANK_TO_MOOV')
+        || direction.includes('BANQUE ->')
+        || direction.includes('BANQUE VERS');
+    }
+    return direction.includes('WALLET_TO_BANK')
+      || direction.includes('MOOV_TO_BANK')
+      || direction.includes('-> BANQUE')
+      || direction.includes('VERS BANQUE');
   }
 
   get kpiScopeLabel(): string {
@@ -1803,24 +2013,88 @@ export class AppComponent implements OnInit {
     if (!r) {
       return [];
     }
+    if (this.reportingOperationFilter !== 'ALL') {
+      const rows = this.reportingRowsByOperationFilter;
+      const totalTransactions = rows.length;
+      const matchingRows = rows.filter((row) => row.resultType === 'MATCH_OK');
+      const anomalyRows = rows.filter((row) => row.resultType !== 'MATCH_OK');
+      const completedRows = rows.filter((row) =>
+        row.bankAmount != null
+        && row.operatorAmount != null
+        && (row.resultType === 'MATCH_OK' || row.resultType === 'MONTANT_DIFFERENT')
+      );
+      const operatorSuccessWithoutCarthagoRows = rows.filter((row) => row.resultType === 'OPERATEUR_ABOUTI_SANS_CARTHAGO');
+      const bankSuccessAmount = completedRows.reduce((sum, row) => sum + Number(row.bankAmount ?? 0), 0);
+      const completedOperatorSuccessAmount = completedRows.reduce((sum, row) => sum + Number(row.operatorAmount ?? 0), 0);
+      const operatorSuccessWithoutCarthagoAmount = operatorSuccessWithoutCarthagoRows.reduce((sum, row) => sum + Number(row.operatorAmount ?? 0), 0);
+      const operatorSuccessCount = completedRows.length + operatorSuccessWithoutCarthagoRows.length;
+      const operatorSuccessAmount = completedOperatorSuccessAmount + operatorSuccessWithoutCarthagoAmount;
+      const anomalyAmount = anomalyRows.reduce((sum, row) => {
+        if (row.amountDifference != null) return sum + Math.abs(Number(row.amountDifference));
+        if (row.bankAmount != null && row.operatorAmount != null) return sum + Math.abs(Number(row.bankAmount) - Number(row.operatorAmount));
+        return sum + Math.abs(Number(row.bankAmount ?? row.operatorAmount ?? 0));
+      }, 0);
+      const successRate = totalTransactions ? (matchingRows.length * 100) / totalTransactions : 0;
+      const anomalyRate = totalTransactions ? (anomalyRows.length * 100) / totalTransactions : 0;
+
+      return [
+        { label: 'Tx Total', value: totalTransactions, tone: 'kpi-soft-green' },
+        { label: 'Success Rate', value: this.formatPercent(successRate), tone: 'kpi-soft-green' },
+        { label: 'Anomaly Rate', value: this.formatPercent(anomalyRate), tone: 'kpi-soft-orange' },
+        {
+          label: 'Carthago abouti',
+          value: completedRows.length,
+          tone: 'kpi-soft-green',
+          hint: `Montant: ${this.formatAmount(bankSuccessAmount)}`
+        },
+        {
+          label: `${this.activeOperatorLabel} abouti`,
+          value: operatorSuccessCount,
+          tone: 'kpi-soft-green',
+          hint: `Montant: ${this.formatAmount(operatorSuccessAmount)}`
+        },
+        {
+          label: `${this.activeOperatorLabel} valide sans Carthago`,
+          value: operatorSuccessWithoutCarthagoRows.length,
+          tone: 'kpi-soft-orange',
+          hint: `Montant: ${this.formatAmount(operatorSuccessWithoutCarthagoAmount)}`
+        },
+        {
+          label: 'Anomalies',
+          value: anomalyRows.length,
+          tone: 'kpi-soft-orange',
+          hint: `Montant: ${this.formatAmount(anomalyAmount)}`
+        },
+        {
+          label: 'Debit a tort',
+          value: rows.filter((row) => row.resultType === 'DEBIT_A_TORT').length,
+          tone: 'kpi-soft-orange'
+        },
+        {
+          label: 'Ecart aboutis',
+          value: this.formatAmount(bankSuccessAmount - operatorSuccessAmount),
+          tone: 'kpi-soft-red'
+        }
+      ];
+    }
     return [
       { label: 'Tx Total', value: r.totalTransactions, tone: 'kpi-soft-green' },
       { label: 'Success Rate', value: this.formatPercent(r.successRate), tone: 'kpi-soft-green' },
       { label: 'Anomaly Rate', value: this.formatPercent(r.anomalyRate), tone: 'kpi-soft-orange' },
       {
-        label: 'Banque abouti',
-        value: this.formatAmount(r.bankSuccessAmount),
+        label: 'Carthago abouti',
+        value: r.bankSuccessCount,
         tone: 'kpi-soft-green',
-        hint: `${this.formatNumber(r.bankSuccessCount)} tx`
+        hint: `Montant: ${this.formatAmount(r.bankSuccessAmount)}`
       },
       {
         label: `${this.activeOperatorLabel} abouti`,
-        value: this.formatAmount(r.operateurSuccessAmount),
+        value: r.operateurSuccessCount,
         tone: 'kpi-soft-green',
-        hint: `${this.formatNumber(r.operateurSuccessCount)} tx`
+        hint: `Montant: ${this.formatAmount(r.operateurSuccessAmount)}`
       },
       {
-        label: `${this.activeOperatorLabel} abouti sans Carthago`,
+        label: `${this.activeOperatorLabel} valide sans Carthago`,
         value: r.operateurSuccessSansCarthagoCount ?? 0,
         tone: 'kpi-soft-orange',
         hint: `Montant: ${this.formatAmount(r.operateurSuccessSansCarthagoAmount)}`
@@ -1836,6 +2110,12 @@ export class AppComponent implements OnInit {
         value: this.formatNumber(r.moyenneJournaliereTransactions),
         tone: 'kpi-soft-yellow',
         hint: `Pic: ${this.formatNumber(r.picVolumeJournalier.totalTransactions)} tx${r.picVolumeJournalier.businessDate ? ` le ${r.picVolumeJournalier.businessDate}` : ''}`
+      },
+      {
+        label: 'Anomalies',
+        value: r.anomalyCount,
+        tone: 'kpi-soft-orange',
+        hint: `Montant: ${this.formatAmount(r.montantAnomalies)}`
       },
       { label: 'Debit a tort', value: r.debitATortCount, tone: 'kpi-soft-orange' },
       {
@@ -2029,6 +2309,7 @@ export class AppComponent implements OnInit {
           this.compensationWeekTo = ordered[ordered.length - 1]?.businessDate || '';
           if (this.compensationWeekFrom && this.compensationWeekTo) {
             this.loadCompensationDiscrepancies(this.compensationWeekFrom, this.compensationWeekTo);
+            this.loadCompensationResultRows(this.compensationWeekFrom, this.compensationWeekTo);
           }
         },
         error: () => {
@@ -2049,6 +2330,7 @@ export class AppComponent implements OnInit {
           const to = ordered[ordered.length - 1]?.businessDate || '';
           if (from && to) {
             this.loadCompensationDiscrepancies(from, to);
+            this.loadCompensationResultRows(from, to);
           }
         },
         error: () => {
@@ -2074,6 +2356,7 @@ export class AppComponent implements OnInit {
         this.compensationPeriod = undefined;
         if (from && to) {
           this.loadCompensationDiscrepancies(from, to);
+          this.loadCompensationResultRows(from, to);
         }
       },
       error: () => {
@@ -2090,27 +2373,160 @@ export class AppComponent implements OnInit {
     });
   }
 
-  get filteredCompensationDiscrepancies(): CompensationDiscrepancy[] {
-    return this.compensationDiscrepancies.filter((row) => {
-      if (this.compensationRiskFilter === 'ALL') return true;
-      if (this.compensationRiskFilter === 'ABSENT_OPERATEUR') {
-        return row.resultType === 'ABSENT_COTE_MOOV' || row.resultType === 'ABSENT_COTE_ORANGE';
+  private loadCompensationResultRows(dateFrom: string, dateTo: string): void {
+    this.api.getAllGlobalResults('ALL', 2000, this.selectedOperator, dateFrom, dateTo, null).subscribe({
+      next: (rows) => {
+        this.compensationResultRows = rows ?? [];
+        this.hydrateTransactionDetailsForRows(this.compensationResultRows);
+        this.resetTablePage('compensation-position');
+        this.resetTablePage('compensation-risk');
+      },
+      error: () => {
+        this.compensationResultRows = [];
       }
-      if (this.compensationRiskFilter === 'ABSENT_BANQUE') {
-        return row.resultType === 'ABSENT_COTE_BANQUE';
-      }
-      return row.resultType === 'ECHEC_DES_DEUX_COTES';
     });
   }
 
+  onCompensationOperationFilterChange(): void {
+    this.resetTablePage('compensation-position');
+    this.resetTablePage('compensation-risk');
+  }
+
+  get activeCompensationRows(): CompensationDaily[] {
+    if (this.compensationOperationFilter === 'ALL') {
+      return this.compensationRows;
+    }
+    const rowsByDate = new Map<string, ReconciliationResult[]>();
+    for (const row of this.compensationResultRows) {
+      if (this.resolveOperationType(row) !== this.compensationOperationFilter) {
+        continue;
+      }
+      if (!this.isCompensationBankSuccess(row) && !this.isCompensationOperatorSuccess(row)) {
+        continue;
+      }
+      const businessDate = row.businessDate || '-';
+      rowsByDate.set(businessDate, [...(rowsByDate.get(businessDate) ?? []), row]);
+    }
+    return Array.from(rowsByDate.entries())
+      .map(([businessDate, rows]) => {
+        const operatorRows = rows.filter((row) => this.isCompensationOperatorSuccess(row));
+        const bankRows = rows.filter((row) => this.isCompensationBankSuccess(row));
+        const operatorSuccessAmount = operatorRows.reduce((sum, row) => sum + Number(row.moovAmount ?? 0), 0);
+        const bankSuccessAmount = bankRows.reduce((sum, row) => sum + Number(row.bankAmount ?? 0), 0);
+        const difference = bankSuccessAmount - operatorSuccessAmount;
+        return {
+          businessDate,
+          operator: this.selectedOperator,
+          operatorSuccessCount: operatorRows.filter((row) => row.moovTransactionId != null).length,
+          bankSuccessCount: bankRows.filter((row) => row.bankTransactionId != null).length,
+          operatorSuccessAmount,
+          bankSuccessAmount,
+          difference,
+          decision: difference === 0 ? 'OK_COMPENSATION' : 'A_VERIFIER'
+        };
+      })
+      .sort((a, b) => a.businessDate.localeCompare(b.businessDate));
+  }
+
+  private isCompensationOperatorSuccess(row: ReconciliationResult): boolean {
+    return row.moovTransactionId != null
+      && this.isOperatorSuccessfulStatus(row.moovStatusRaw)
+      && (
+      row.resultType === 'MATCH_OK'
+      || row.resultType === 'MONTANT_DIFFERENT'
+      || row.resultType === 'ABSENT_COTE_BANQUE'
+      || row.resultType === 'CREDIT_SANS_DEBIT'
+      || row.resultType === 'OPERATEUR_ABOUTI_SANS_CARTHAGO'
+    );
+  }
+
+  private isCompensationBankSuccess(row: ReconciliationResult): boolean {
+    return row.bankTransactionId != null
+      && this.isBankSuccessfulStatus(row.bankStatusRaw)
+      && (
+      row.resultType === 'MATCH_OK'
+      || row.resultType === 'MONTANT_DIFFERENT'
+      || row.resultType === 'ABSENT_COTE_MOOV'
+      || row.resultType === 'ABSENT_COTE_ORANGE'
+      || row.resultType === 'DEBIT_A_TORT'
+    );
+  }
+
+  private isOperatorSuccessfulStatus(value: string | null | undefined): boolean {
+    const key = this.normalizeStatusKey(value);
+    return key === 'COMPLETED'
+      || key === 'TS'
+      || key === 'SUCCESS_MOOV'
+      || key === 'SUCCESS_ORANGE';
+  }
+
+  private isBankSuccessfulStatus(value: string | null | undefined): boolean {
+    const key = this.normalizeStatusKey(value);
+    return key === 'ALLOUE'
+      || key === 'PAIEMENT_GENERE'
+      || key === 'ALLOCATED'
+      || key === 'DEALLOCATED'
+      || key === 'PAYMENTISSUED'
+      || key === 'PAYMENT_ISSUED'
+      || key === 'SUCCESS_BANK';
+  }
+
+  get filteredCompensationDiscrepancies(): CompensationDiscrepancy[] {
+    return this.compensationDiscrepancies.filter((row) => {
+      if (!this.compensationDiscrepancyMatchesOperation(row)) return false;
+      if (!this.isJustifiableSuccessGap(row)) return false;
+      if (this.compensationRiskFilter === 'ALL') return true;
+      if (this.compensationRiskFilter === 'ABSENT_OPERATEUR') {
+        return row.resultType === 'ABSENT_COTE_MOOV'
+          || row.resultType === 'ABSENT_COTE_ORANGE'
+          || row.resultType === 'DEBIT_A_TORT';
+      }
+      if (this.compensationRiskFilter === 'ABSENT_BANQUE') {
+        return row.resultType === 'ABSENT_COTE_BANQUE'
+          || row.resultType === 'CREDIT_SANS_DEBIT'
+          || row.resultType === 'OPERATEUR_ABOUTI_SANS_CARTHAGO';
+      }
+      return false;
+    });
+  }
+
+  private isJustifiableSuccessGap(row: CompensationDiscrepancy): boolean {
+    if (row.resultType === 'ABSENT_COTE_MOOV' || row.resultType === 'ABSENT_COTE_ORANGE' || row.resultType === 'DEBIT_A_TORT') {
+      return this.isBankSuccessfulStatus(row.bankStatusRaw);
+    }
+    if (row.resultType === 'ABSENT_COTE_BANQUE' || row.resultType === 'CREDIT_SANS_DEBIT' || row.resultType === 'OPERATEUR_ABOUTI_SANS_CARTHAGO') {
+      return this.isOperatorSuccessfulStatus(row.operatorStatusRaw);
+    }
+    return false;
+  }
+
+  private compensationDiscrepancyMatchesOperation(row: CompensationDiscrepancy): boolean {
+    if (this.compensationOperationFilter === 'ALL') {
+      return true;
+    }
+    const match = this.compensationResultRows.find((result) => result.transactionKey === row.transactionKey);
+    return match ? this.resolveOperationType(match) === this.compensationOperationFilter : false;
+  }
+
   private riskRowsByType(type: 'ABSENT_OPERATEUR' | 'ABSENT_BANQUE' | 'ECHEC_DEUX_COTES'): CompensationDiscrepancy[] {
+    const rows = this.compensationDiscrepancies
+      .filter((row) => this.compensationDiscrepancyMatchesOperation(row))
+      .filter((row) => this.isJustifiableSuccessGap(row));
     if (type === 'ABSENT_OPERATEUR') {
-      return this.compensationDiscrepancies.filter((r) => r.resultType === 'ABSENT_COTE_MOOV' || r.resultType === 'ABSENT_COTE_ORANGE');
+      return rows.filter((r) =>
+        r.resultType === 'ABSENT_COTE_MOOV'
+        || r.resultType === 'ABSENT_COTE_ORANGE'
+        || r.resultType === 'DEBIT_A_TORT'
+      );
     }
     if (type === 'ABSENT_BANQUE') {
-      return this.compensationDiscrepancies.filter((r) => r.resultType === 'ABSENT_COTE_BANQUE');
+      return rows.filter((r) =>
+        r.resultType === 'ABSENT_COTE_BANQUE'
+        || r.resultType === 'CREDIT_SANS_DEBIT'
+        || r.resultType === 'OPERATEUR_ABOUTI_SANS_CARTHAGO'
+      );
     }
-    return this.compensationDiscrepancies.filter((r) => r.resultType === 'ECHEC_DES_DEUX_COTES');
+    return [];
   }
 
   private sumAmount(rows: CompensationDiscrepancy[], side: 'bank' | 'operator'): number {
@@ -2118,62 +2534,76 @@ export class AppComponent implements OnInit {
   }
 
   get compensationBankCount(): number {
-    return this.compensationPeriod?.totalBankSuccessCount
-      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.bankSuccessCount ?? 0), 0);
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.totalBankSuccessCount != null) {
+      return this.compensationPeriod.totalBankSuccessCount;
+    }
+    return this.activeCompensationRows.reduce((sum, row) => sum + Number(row.bankSuccessCount ?? 0), 0);
   }
 
   get compensationOperatorCount(): number {
-    return this.compensationPeriod?.totalOperatorSuccessCount
-      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.operatorSuccessCount ?? 0), 0);
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.totalOperatorSuccessCount != null) {
+      return this.compensationPeriod.totalOperatorSuccessCount;
+    }
+    return this.activeCompensationRows.reduce((sum, row) => sum + Number(row.operatorSuccessCount ?? 0), 0);
   }
 
   get compensationBankAmount(): number {
-    return this.compensationPeriod?.totalBankSuccessAmount
-      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.bankSuccessAmount ?? 0), 0);
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.totalBankSuccessAmount != null) {
+      return this.compensationPeriod.totalBankSuccessAmount;
+    }
+    return this.activeCompensationRows.reduce((sum, row) => sum + Number(row.bankSuccessAmount ?? 0), 0);
   }
 
   get compensationOperatorAmount(): number {
-    return this.compensationPeriod?.totalOperatorSuccessAmount
-      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.operatorSuccessAmount ?? 0), 0);
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.totalOperatorSuccessAmount != null) {
+      return this.compensationPeriod.totalOperatorSuccessAmount;
+    }
+    return this.activeCompensationRows.reduce((sum, row) => sum + Number(row.operatorSuccessAmount ?? 0), 0);
   }
 
   get compensationNetGap(): number {
-    return this.compensationPeriod?.totalDifference
-      ?? this.compensationRows.reduce((sum, row) => sum + Number(row.difference ?? 0), 0);
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.totalDifference != null) {
+      return this.compensationPeriod.totalDifference;
+    }
+    return this.activeCompensationRows.reduce((sum, row) => sum + Number(row.difference ?? 0), 0);
   }
 
   get compensationDecision(): string {
-    if (this.compensationPeriod?.decision) {
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.decision) {
       return this.compensationPeriod.decision;
     }
-    if (!this.compensationRows.length) {
+    if (!this.activeCompensationRows.length) {
       return '-';
     }
-    return this.compensationRows.every((row) => row.decision === 'OK_COMPENSATION') ? 'OK_COMPENSATION' : 'A_VERIFIER';
+    return this.activeCompensationRows.every((row) => row.decision === 'OK_COMPENSATION') ? 'OK_COMPENSATION' : 'A_VERIFIER';
   }
 
   get compensationPeriodLabel(): string {
+    const operationLabel = this.compensationOperationFilter === 'ALL'
+      ? ''
+      : ` - ${this.operationOptionLabels[this.compensationOperationFilter]}`;
     if (this.compensationPeriod?.label) {
-      return this.compensationPeriod.label;
+      return `${this.compensationPeriod.label}${operationLabel}`;
     }
     if (this.compensationMode === 'DAILY' && this.compensationDateMode === 'SINGLE') {
-      return this.compensationDate || 'Jour non defini';
+      return `${this.compensationDate || 'Jour non defini'}${operationLabel}`;
     }
     if (this.compensationMode === 'DAILY') {
-      return `${this.compensationDateFrom || '-'} -> ${this.compensationDateTo || '-'}`;
+      return `${this.compensationDateFrom || '-'} -> ${this.compensationDateTo || '-'}${operationLabel}`;
     }
     if (this.compensationMode === 'WEEKLY') {
-      return this.compensationWeekFrom && this.compensationWeekTo
+      const label = this.compensationWeekFrom && this.compensationWeekTo
         ? `${this.compensationWeekFrom} -> ${this.compensationWeekTo}`
         : `Semaine de reference ${this.compensationWeekReferenceDate || '-'}`;
+      return `${label}${operationLabel}`;
     }
-    return `Mois ${this.compensationMonth}/${new Date().getFullYear()}`;
+    return `Mois ${this.compensationMonth}/${new Date().getFullYear()}${operationLabel}`;
   }
 
   get riskAbsentOperatorCount(): number { return this.riskRowsByType('ABSENT_OPERATEUR').length; }
   get riskAbsentBankCount(): number { return this.riskRowsByType('ABSENT_BANQUE').length; }
   get riskEchecDeuxCotesCount(): number { return this.riskRowsByType('ECHEC_DEUX_COTES').length; }
-  get riskTotalCount(): number { return this.riskAbsentOperatorCount + this.riskAbsentBankCount + this.riskEchecDeuxCotesCount; }
+  get riskTotalCount(): number { return this.riskAbsentOperatorCount + this.riskAbsentBankCount; }
 
   get riskAbsentOperatorBankAmount(): number { return this.sumAmount(this.riskRowsByType('ABSENT_OPERATEUR'), 'bank'); }
   get riskAbsentOperatorOperatorAmount(): number { return this.sumAmount(this.riskRowsByType('ABSENT_OPERATEUR'), 'operator'); }
@@ -2196,7 +2626,7 @@ export class AppComponent implements OnInit {
   }
 
   exportCompensationCsv(): void {
-    if (!this.compensationRows.length && !this.compensationDiscrepancies.length) {
+    if (!this.activeCompensationRows.length && !this.filteredCompensationDiscrepancies.length) {
       this.error = 'Aucune donnee de compensation a exporter.';
       return;
     }
@@ -2210,7 +2640,7 @@ export class AppComponent implements OnInit {
 
     csvRows.push(['Position par date'].map((value) => this.csvCell(value)).join(';'));
     csvRows.push(['Date', 'Operateur', 'Nb tx Operateur', 'Nb tx Banque', 'Montant Operateur', 'Montant Banque', 'Ecart', 'Decision'].map((value) => this.csvCell(value)).join(';'));
-    for (const row of this.compensationRows) {
+    for (const row of this.activeCompensationRows) {
       csvRows.push([
         row.businessDate,
         row.operator,
