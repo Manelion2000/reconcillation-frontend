@@ -1,4 +1,64 @@
-<section class="home-screen" *ngIf="showHome">
+<section class="login-screen" *ngIf="!isAuthenticated">
+  <form class="login-panel" *ngIf="authMode === 'LOGIN'" (ngSubmit)="login()">
+    <div class="login-brand">
+      <img src="assets/branding/bsic-logo.png" alt="BSIC" class="login-logo" />
+      <div>
+        <h1>Connexion</h1>
+        <p>Acces securise a la plateforme de reconciliation.</p>
+      </div>
+    </div>
+    <div class="auth-switch">
+      <button type="button" class="tab-btn active">Connexion</button>
+      <button type="button" class="tab-btn" (click)="authMode = 'REGISTER'">Creer un compte</button>
+    </div>
+    <label>Nom utilisateur
+      <input type="text" name="username" [(ngModel)]="loginUsername" autocomplete="username" />
+    </label>
+    <label>Mot de passe
+      <input type="password" name="password" [(ngModel)]="loginPassword" autocomplete="current-password" />
+    </label>
+    <label class="checkbox-line">
+      <input type="checkbox" name="rememberMe" [(ngModel)]="loginRememberMe" />
+      <span>Garder la session active</span>
+    </label>
+    <button class="primary full-action" type="submit" [disabled]="loginLoading">{{ loginLoading ? 'Connexion...' : 'Se connecter' }}</button>
+    <p class="ok" *ngIf="registerMessage">{{ registerMessage }}</p>
+    <p class="error" *ngIf="loginError">{{ loginError }}</p>
+  </form>
+
+  <form class="login-panel" *ngIf="authMode === 'REGISTER'" (ngSubmit)="register()">
+    <div class="login-brand">
+      <img src="assets/branding/bsic-logo.png" alt="BSIC" class="login-logo" />
+      <div>
+        <h1>Creer un compte</h1>
+        <p>L'email devient automatiquement l'identifiant de connexion.</p>
+      </div>
+    </div>
+    <div class="auth-switch">
+      <button type="button" class="tab-btn" (click)="authMode = 'LOGIN'">Connexion</button>
+      <button type="button" class="tab-btn active">Creer un compte</button>
+    </div>
+    <label>Nom
+      <input type="text" name="registerNom" [(ngModel)]="registerNom" autocomplete="family-name" />
+    </label>
+    <label>Prenom
+      <input type="text" name="registerPrenom" [(ngModel)]="registerPrenom" autocomplete="given-name" />
+    </label>
+    <label>Email
+      <input type="email" name="registerEmail" [(ngModel)]="registerEmail" autocomplete="email" />
+    </label>
+    <label>Mot de passe
+      <input type="password" name="registerPassword" [(ngModel)]="registerPassword" autocomplete="new-password" />
+    </label>
+    <label>Confirmation mot de passe
+      <input type="password" name="registerConfirmation" [(ngModel)]="registerConfirmation" autocomplete="new-password" />
+    </label>
+    <button class="primary full-action" type="submit" [disabled]="registerLoading">{{ registerLoading ? 'Creation...' : 'Creer le compte' }}</button>
+    <p class="error" *ngIf="registerError">{{ registerError }}</p>
+  </form>
+</section>
+
+<section class="home-screen" *ngIf="isAuthenticated && showHome">
   <div class="home-shell">
     <header class="home-header">
       <img src="assets/branding/bsic-logo.png" alt="BSIC" class="home-logo" />
@@ -25,7 +85,7 @@
   </div>
 </section>
 
-<div class="layout" *ngIf="!showHome">
+<div class="layout" *ngIf="isAuthenticated && !showHome">
   <aside class="sidebar">
     <div class="brand">
       <img src="assets/branding/bsic-logo.png" alt="BSIC" class="brand-logo" />
@@ -141,7 +201,7 @@
       <span *ngIf="activePage === 'DASHBOARD'">Dashboard</span>
       <span *ngIf="activePage === 'HISTORIQUE'">Historique</span>
       <span *ngIf="activePage === 'RECONCILIATION'">Reconciliation</span>
-      <span *ngIf="activePage === 'COMPENSATION'">Compensation</span>
+      <span *ngIf="activePage === 'COMPENSATION'">Decision-Reconcilliation</span>
       <span *ngIf="activePage === 'ACCOUNTING'">Comptabilisation</span>
       <span>/</span>
       <span>{{ activePage === 'ACCOUNTING' ? accountingOperatorLabel : activeOperatorLabel }}</span>
@@ -160,7 +220,9 @@
         <p *ngIf="activePage === 'ACCOUNTING'">Controle de comptabilisation CBS a partir des references operation Carthago.</p>
       </div>
       <div class="topbar-actions">
+        <span class="current-user">{{ currentUser?.prenom || currentUser?.nom || currentUser?.username || 'Utilisateur' }}</span>
         <button class="ghost" (click)="backToHome()">Accueil</button>
+        <button class="ghost danger-text" (click)="logout()">Deconnexion</button>
         <div class="user-dot"></div>
       </div>
     </header>
@@ -549,7 +611,7 @@
 
         <div class="compensation-summary">
           <article class="compensation-decision" [ngClass]="statusClass(compensationDecision)">
-            <span class="label">Decision de compensation</span>
+            <span class="label">Decision de Reconcilliation</span>
             <strong><span class="status-icon">{{ statusIcon(compensationDecision) }}</span>{{ statusLabel(compensationDecision) }}</strong>
             <small>{{ compensationPeriodLabel }}</small>
           </article>

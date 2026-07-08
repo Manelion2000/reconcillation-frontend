@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { forkJoin, from, Observable } from 'rxjs';
 import { concatMap, toArray } from 'rxjs/operators';
 import { ReconciliationApiService } from './core/reconciliation-api.service';
+import { AuthService, CurrentUser } from './core/auth.service';
 import {
   BankTransaction,
   DashboardAmounts,
@@ -80,6 +81,21 @@ export class AppComponent implements OnInit {
   @ViewChild('amplitudeFileInput') amplitudeFileInput?: ElementRef<HTMLInputElement>;
 
   selectedOperator: OperatorType = 'MOOV';
+  loginUsername = '';
+  loginPassword = '';
+  loginRememberMe = true;
+  loginLoading = false;
+  loginError = '';
+  authMode: 'LOGIN' | 'REGISTER' = 'LOGIN';
+  registerNom = '';
+  registerPrenom = '';
+  registerEmail = '';
+  registerPassword = '';
+  registerConfirmation = '';
+  registerLoading = false;
+  registerMessage = '';
+  registerError = '';
+  currentUser: CurrentUser | null = null;
   activePage: PageType = 'DASHBOARD';
   businessDate = new Date().toISOString().slice(0, 10);
   dateFrom = '';
@@ -207,6 +223,7 @@ export class AppComponent implements OnInit {
     'ABSENT_COTE_MOOV',
     'ABSENT_COTE_ORANGE',
     'OPERATEUR_NON_ABOUTI_SANS_BANQUE',
+    'APPROVISIONNEMENT',
     'MONTANT_DIFFERENT',
     'DOUBLON_BANQUE',
     'DOUBLON_MOOV',
@@ -222,20 +239,121 @@ export class AppComponent implements OnInit {
 
   quickFilters: Array<{ label: string; type: ReconciliationResultType | 'ALL'; className: string; count: () => number }> = [];
 
-  constructor(private readonly api: ReconciliationApiService, private readonly router: Router) {}
+  constructor(
+    private readonly api: ReconciliationApiService,
+    private readonly router: Router,
+    private readonly auth: AuthService
+  ) {}
 
   ngOnInit(): void {
     this.applyPathState(this.router.url);
+    if (!this.isAuthenticated) {
+      return;
+    }
+    this.currentUser = this.auth.currentUser();
+    this.refreshCurrentUser();
     this.quickFilters = [
       { label: 'Global', type: 'ALL', className: 'q-neutral', count: () => this.totalResults },
       { label: 'Debit a tort', type: 'DEBIT_A_TORT', className: 'q-danger', count: () => this.summary?.totalDebitATort ?? 0 },
       { label: 'Credit sans debit', type: 'CREDIT_SANS_DEBIT', className: 'q-info', count: () => this.summary?.totalCreditSansDebit ?? 0 },
       { label: 'Echec 2 cotes', type: 'ECHEC_DES_DEUX_COTES', className: 'q-danger', count: () => this.summary?.totalEchecDesDeuxCotes ?? 0 },
-      { label: 'Doublons', type: 'DOUBLON_BANQUE', className: 'q-warning', count: () => this.summary?.totalDoublons ?? 0 }
+      { label: 'Doublons', type: 'DOUBLON_BANQUE', className: 'q-warning', count: () => this.summary?.totalDoublons ?? 0 },
+      { label: 'Approvisionnement', type: 'APPROVISIONNEMENT', className: 'q-info', count: () => this.approvisionnementCount }
     ];
     this.loadRuns();
     this.loadSummaryAndResults();
     this.loadDashboardData();
+  }
+
+  get isAuthenticated(): boolean {
+    return this.auth.isAuthenticated();
+  }
+
+  login(): void {
+    if (!this.loginUsername || !this.loginPassword) {
+      this.loginError = 'Veuillez renseigner le nom utilisateur et le mot de passe.';
+      return;
+    }
+    this.loginLoading = true;
+    this.loginError = '';
+    this.auth.login({
+      username: this.loginUsername.trim(),
+      password: this.loginPassword,
+      rememberMe: this.loginRememberMe
+    }).subscribe({
+      next: () => {
+        this.loginPassword = '';
+        this.loginLoading = false;
+        this.currentUser = this.auth.currentUser();
+        this.refreshCurrentUser();
+        this.quickFilters = [
+          { label: 'Global', type: 'ALL', className: 'q-neutral', count: () => this.totalResults },
+          { label: 'Debit a tort', type: 'DEBIT_A_TORT', className: 'q-danger', count: () => this.summary?.totalDebitATort ?? 0 },
+          { label: 'Credit sans debit', type: 'CREDIT_SANS_DEBIT', className: 'q-info', count: () => this.summary?.totalCreditSansDebit ?? 0 },
+          { label: 'Echec 2 cotes', type: 'ECHEC_DES_DEUX_COTES', className: 'q-danger', count: () => this.summary?.totalEchecDesDeuxCotes ?? 0 },
+          { label: 'Doublons', type: 'DOUBLON_BANQUE', className: 'q-warning', count: () => this.summary?.totalDoublons ?? 0 },
+          { label: 'Approvisionnement', type: 'APPROVISIONNEMENT', className: 'q-info', count: () => this.approvisionnementCount }
+        ];
+        this.loadRuns();
+        this.loadSummaryAndResults();
+        this.loadDashboardData();
+      },
+      error: (err) => {
+        this.loginLoading = false;
+        this.loginError = err?.error?.message || err?.error || 'Authentification impossible. Verifiez vos identifiants.';
+      }
+    });
+  }
+
+  register(): void {
+    if (!this.registerNom || !this.registerPrenom || !this.registerEmail || !this.registerPassword || !this.registerConfirmation) {
+      this.registerError = 'Veuillez renseigner le nom, le prenom, l email et le mot de passe.';
+      return;
+    }
+    if (this.registerPassword !== this.registerConfirmation) {
+      this.registerError = 'La confirmation ne correspond pas au mot de passe.';
+      return;
+    }
+    this.registerLoading = true;
+    this.registerError = '';
+    this.registerMessage = '';
+    this.auth.register({
+      nom: this.registerNom.trim(),
+      prenom: this.registerPrenom.trim(),
+      email: this.registerEmail.trim().toLowerCase(),
+      password: this.registerPassword,
+      confirmation: this.registerConfirmation
+    }).subscribe({
+      next: () => {
+        this.registerLoading = false;
+        this.registerMessage = 'Compte cree. Vous pouvez maintenant vous connecter.';
+        this.loginUsername = this.registerEmail.trim().toLowerCase();
+        this.registerNom = '';
+        this.registerPrenom = '';
+        this.registerEmail = '';
+        this.registerPassword = '';
+        this.registerConfirmation = '';
+        this.authMode = 'LOGIN';
+      },
+      error: (err) => {
+        this.registerLoading = false;
+        this.registerError = err?.error?.message || err?.error || 'Creation du compte impossible.';
+      }
+    });
+  }
+
+  logout(): void {
+    this.auth.logout();
+    this.currentUser = null;
+    this.showHome = true;
+    this.pushPath('/home');
+  }
+
+  private refreshCurrentUser(): void {
+    this.auth.loadCurrentUser().subscribe({
+      next: (user) => this.currentUser = user,
+      error: () => this.currentUser = this.auth.currentUser()
+    });
   }
 
   setOperator(operator: OperatorType): void {
@@ -905,6 +1023,7 @@ export class AppComponent implements OnInit {
       ABSENT_COTE_BANQUE: 'Absent Banque',
       OPERATEUR_ABOUTI_SANS_CARTHAGO: `${this.activeOperatorLabel} abouti sans Carthago`,
       OPERATEUR_NON_ABOUTI_SANS_BANQUE: 'Operateur non abouti',
+      APPROVISIONNEMENT: 'Approvisionnement',
       MONTANT_DIFFERENT: 'Montant different',
       DOUBLON_BANQUE: 'Doublon Banque',
       DOUBLON_MOOV: 'Doublon operateur',
@@ -917,6 +1036,7 @@ export class AppComponent implements OnInit {
 
   statusClass(value: string | null | undefined): string {
     const key = this.normalizeStatusKey(value);
+    if (key === 'APPROVISIONNEMENT') return 'warn';
     if (key.includes('SANS_CARTHAGO')) return 'warn';
     if (key.includes('MATCH') || key === 'COMPTABILISE' || key === 'OK_COMPENSATION' || key.includes('ALLOUE') || key.includes('ABOUTI') || key.includes('COMPLETED') || key === 'TS') return 'ok';
     if (key.includes('INCONNU') || key.includes('UNKNOWN')) return 'unknown';
@@ -1793,6 +1913,10 @@ export class AppComponent implements OnInit {
       })
       .slice()
       .sort((a, b) => this.resolveSortTimestamp(b) - this.resolveSortTimestamp(a));
+  }
+
+  get approvisionnementCount(): number {
+    return this.operatorScopedResults.filter((row) => row.resultType === 'APPROVISIONNEMENT').length;
   }
 
   private resolveOperationType(row: ReconciliationResult): 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BOTH' {

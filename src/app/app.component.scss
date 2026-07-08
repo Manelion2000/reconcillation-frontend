@@ -2988,3 +2988,87 @@ label {
     padding: 9px 11px;
   }
 }
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #e7f4ff 0%, #f8fbff 48%, #eef4fa 100%);
+}
+
+.login-panel {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid #c8ddec;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(12, 49, 81, 0.14);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5edf5;
+}
+
+.auth-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.auth-switch .tab-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.login-brand h1 {
+  margin: 0 0 4px;
+  color: #101820;
+  font-size: 24px;
+}
+
+.login-brand p {
+  margin: 0;
+  color: #54657a;
+  font-size: 14px;
+}
+
+.login-logo {
+  width: 92px;
+  height: auto;
+  padding: 8px;
+  border: 1px solid #d8e7f3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.checkbox-line {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: #334155;
+  font-weight: 650;
+}
+
+.checkbox-line input {
+  width: auto;
+}
+
+.current-user {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--navy, #101820);
+  font-weight: 750;
+}
+
+.danger-text {
+  color: #be2a2a;
+}
