@@ -1919,6 +1919,10 @@ export class AppComponent implements OnInit {
     return this.operatorScopedResults.filter((row) => row.resultType === 'APPROVISIONNEMENT').length;
   }
 
+  get dashboardApprovisionnementCount(): number {
+    return this.dashboardDistribution.find((item) => item.resultType === 'APPROVISIONNEMENT')?.count ?? 0;
+  }
+
   private resolveOperationType(row: ReconciliationResult): 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BOTH' {
     if (this.selectedOperator === 'MOOV' && row.moovTransactionId) {
       const txType = this.moovTxById.get(row.moovTransactionId)?.transactionType;
@@ -2127,6 +2131,7 @@ export class AppComponent implements OnInit {
       { label: 'Success Rate', value: this.formatPercent(s.successRate), tone: 'kpi-soft-yellow' },
       { label: 'Anomaly Rate', value: this.formatPercent(s.anomalyRate), tone: 'kpi-soft-orange' },
       { label: 'Total Results', value: s.totalResults, tone: 'kpi-soft-yellow' },
+      { label: 'Approvisionnement', value: this.dashboardApprovisionnementCount, tone: 'kpi-soft-yellow' },
       { label: 'Montant Anomalies', value: this.formatAmount(s.montantAnomalies), tone: 'kpi-soft-orange' },
       { label: 'Ecart aboutis', value: this.formatAmount(s.ecartGlobal), tone: 'kpi-soft-red' }
     ];
