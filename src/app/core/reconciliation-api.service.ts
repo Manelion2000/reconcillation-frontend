@@ -26,7 +26,8 @@ import {
   ImportBulkDeletionResult,
   ImportFullDeletionResult,
   ImportDeletionPreviewResult
-  , CompensationDaily, CompensationPeriodResponse, CompensationDiscrepancy, AccountingCheckRow, AmplitudeCleanupResult, AccountingKpi
+  , CompensationDaily, CompensationPeriodResponse, CompensationDiscrepancy, AccountingCheckRow, AmplitudeCleanupResult, AccountingKpi,
+  AdminUser, AdminUserPayload, AdminPasswordResetResponse
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -61,6 +62,38 @@ export class ReconciliationApiService {
     form.append('file', file);
     form.append('businessDate', businessDate);
     return this.http.post<FileImport>(`${this.api}/imports/amplitude`, form);
+  }
+
+  getAdminUsers(): Observable<AdminUser[]> {
+    return this.http.get<AdminUser[]>(`${this.api}/admin/users`);
+  }
+
+  createAdminUser(payload: AdminUserPayload): Observable<AdminUser> {
+    return this.http.post<AdminUser>(`${this.api}/admin/users`, payload);
+  }
+
+  updateAdminUser(id: string, payload: AdminUserPayload): Observable<AdminUser> {
+    return this.http.put<AdminUser>(`${this.api}/admin/users/${id}`, payload);
+  }
+
+  activateAdminUser(id: string): Observable<AdminUser> {
+    return this.http.patch<AdminUser>(`${this.api}/admin/users/${id}/activate`, null);
+  }
+
+  disableAdminUser(id: string): Observable<AdminUser> {
+    return this.http.patch<AdminUser>(`${this.api}/admin/users/${id}/disable`, null);
+  }
+
+  unlockAdminUser(id: string): Observable<AdminUser> {
+    return this.http.patch<AdminUser>(`${this.api}/admin/users/${id}/unlock`, null);
+  }
+
+  resetAdminUserPassword(id: string): Observable<AdminPasswordResetResponse> {
+    return this.http.post<AdminPasswordResetResponse>(`${this.api}/admin/users/${id}/reset-password`, null);
+  }
+
+  changeOwnPassword(payload: { ancien: string; nouveau: string; confirmer: string }): Observable<void> {
+    return this.http.put<void>(`${this.api}/users/change-password`, payload);
   }
 
   deleteImportsBySourceAndDate(

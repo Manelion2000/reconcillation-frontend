@@ -9,7 +9,6 @@
     </div>
     <div class="auth-switch">
       <button type="button" class="tab-btn active">Connexion</button>
-      <button type="button" class="tab-btn" (click)="authMode = 'REGISTER'">Creer un compte</button>
     </div>
     <label>Nom utilisateur
       <input type="text" name="username" [(ngModel)]="loginUsername" autocomplete="username" />
@@ -58,7 +57,31 @@
   </form>
 </section>
 
-<section class="home-screen" *ngIf="isAuthenticated && showHome">
+<section class="login-screen" *ngIf="isAuthenticated && passwordResetRequired">
+  <form class="login-panel" (ngSubmit)="changeRequiredPassword()">
+    <div class="login-brand">
+      <img src="assets/branding/bsic-logo.png" alt="BSIC" class="login-logo" />
+      <div>
+        <h1>Mot de passe temporaire</h1>
+        <p>Definissez un nouveau mot de passe avant d'acceder a la plateforme.</p>
+      </div>
+    </div>
+    <label>Mot de passe temporaire
+      <input type="password" name="currentPassword" [(ngModel)]="currentPassword" autocomplete="current-password" />
+    </label>
+    <label>Nouveau mot de passe
+      <input type="password" name="newPassword" [(ngModel)]="newPassword" autocomplete="new-password" />
+    </label>
+    <label>Confirmation
+      <input type="password" name="confirmNewPassword" [(ngModel)]="confirmNewPassword" autocomplete="new-password" />
+    </label>
+    <button class="primary full-action" type="submit" [disabled]="passwordChangeLoading">{{ passwordChangeLoading ? 'Validation...' : 'Changer le mot de passe' }}</button>
+    <button class="ghost full-action" type="button" (click)="logout()">Se deconnecter</button>
+    <p class="error" *ngIf="passwordChangeError">{{ passwordChangeError }}</p>
+  </form>
+</section>
+
+<section class="home-screen" *ngIf="isAuthenticated && !passwordResetRequired && showHome">
   <div class="home-shell">
     <header class="home-header">
       <img src="assets/branding/bsic-logo.png" alt="BSIC" class="home-logo" />
@@ -85,7 +108,7 @@
   </div>
 </section>
 
-<div class="layout" *ngIf="isAuthenticated && !showHome">
+<div class="layout" *ngIf="isAuthenticated && !passwordResetRequired && !showHome">
   <aside class="sidebar">
     <div class="brand">
       <img src="assets/branding/bsic-logo.png" alt="BSIC" class="brand-logo" />
@@ -194,6 +217,7 @@
       <button class="tab-btn" [class.active]="activePage === 'RECONCILIATION'" (click)="setPage('RECONCILIATION')">Reconciliation</button>
       <button class="tab-btn" [class.active]="activePage === 'COMPENSATION'" (click)="setPage('COMPENSATION')">Compensation</button>
       <button class="tab-btn" [class.active]="activePage === 'ACCOUNTING'" (click)="setPage('ACCOUNTING')">Comptabilisation</button>
+      <button class="tab-btn" *ngIf="isAdmin" [class.active]="activePage === 'ADMIN_USERS'" (click)="setPage('ADMIN_USERS')">Administration</button>
     </nav>
     <div class="breadcrumb-bar">
       <span>Accueil</span>
@@ -203,6 +227,7 @@
       <span *ngIf="activePage === 'RECONCILIATION'">Reconciliation</span>
       <span *ngIf="activePage === 'COMPENSATION'">Decision-Reconcilliation</span>
       <span *ngIf="activePage === 'ACCOUNTING'">Comptabilisation</span>
+      <span *ngIf="activePage === 'ADMIN_USERS'">Administration</span>
       <span>/</span>
       <span>{{ activePage === 'ACCOUNTING' ? accountingOperatorLabel : activeOperatorLabel }}</span>
     </div>
@@ -213,11 +238,13 @@
         <h1 *ngIf="activePage === 'HISTORIQUE'">Historique des reconciliations / {{ activeOperatorLabel }}</h1>
         <h1 *ngIf="activePage === 'COMPENSATION'">Compensation / {{ activeOperatorLabel }}</h1>
         <h1 *ngIf="activePage === 'ACCOUNTING'">Comptabilisation Carthago / AMPLITUDE</h1>
+        <h1 *ngIf="activePage === 'ADMIN_USERS'">Administration des utilisateurs</h1>
         <p *ngIf="activePage === 'RECONCILIATION'">Pilotage des imports, runs et resultats de reconciliation.</p>
         <p *ngIf="activePage === 'DASHBOARD'">Page dediee KPI, montants, timeline et top anomalies.</p>
         <p *ngIf="activePage === 'HISTORIQUE'">Consultation des rapprochements disponibles par date transaction.</p>
         <p *ngIf="activePage === 'COMPENSATION'">Module dedie aux compensations journaliere, hebdomadaire et mensuelle.</p>
         <p *ngIf="activePage === 'ACCOUNTING'">Controle de comptabilisation CBS a partir des references operation Carthago.</p>
+        <p *ngIf="activePage === 'ADMIN_USERS'">Creation, activation, desactivation et reset des comptes.</p>
       </div>
       <div class="topbar-actions">
         <span class="current-user">{{ currentUser?.prenom || currentUser?.nom || currentUser?.username || 'Utilisateur' }}</span>
@@ -627,10 +654,20 @@
               <strong>{{ compensationOperatorAmount | number : '1.0-2' }}</strong>
               <small>{{ compensationOperatorCount }} tx reussies</small>
             </article>
+            <article class="dashboard-kpi-tile kpi-soft-green" *ngIf="compensationMoovClosingBalance !== null">
+              <span class="label">Balance Moov</span>
+              <strong>{{ compensationMoovClosingBalance | number : '1.0-2' }}</strong>
+              <small>Derniere transaction de la periode</small>
+            </article>
             <article class="dashboard-kpi-tile" [ngClass]="compensationNetGap === 0 ? 'kpi-soft-green' : 'kpi-soft-red'">
               <span class="label">Ecart net</span>
               <strong>{{ compensationNetGap | number : '1.0-2' }}</strong>
               <small>{{ compensationBankCount }} tx Carthago / {{ compensationOperatorCount }} tx {{ activeOperatorLabel }}</small>
+            </article>
+            <article class="dashboard-kpi-tile" [ngClass]="compensationReconciliationBalance === 0 ? 'kpi-soft-green' : 'kpi-soft-yellow'">
+              <span class="label">Solde Reconcilliation</span>
+              <strong>{{ compensationReconciliationBalance | number : '1.0-2' }}</strong>
+              <small>{{ compensationReconciliationBalanceHint }}</small>
             </article>
             <article class="dashboard-kpi-tile" [ngClass]="riskTotalCount === 0 ? 'kpi-soft-green' : 'kpi-soft-orange'">
               <span class="label">Operations a justifier</span>
@@ -765,7 +802,7 @@
         </div>
         <div class="dashboard-kpi-strip" *ngIf="accountingView === 'CURRENT'">
           <article class="dashboard-kpi-tile kpi-soft-green"><span class="label">Comptabilise</span><strong>{{ comptabiliseCount }}</strong></article>
-          <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">Non Comptabilise</span><strong>{{ nonComptabiliseCount }}</strong></article>
+          <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">En Attente</span><strong>{{ nonComptabiliseCount }}</strong></article>
           <article class="dashboard-kpi-tile kpi-soft-orange"><span class="label">Operations a risque</span><strong>{{ accountingRiskCount }}</strong></article>
           <article class="dashboard-kpi-tile kpi-soft-red"><span class="label">AMPLITUDE sans Carthago</span><strong>{{ accountingAmplitudeSansCarthagoCount }}</strong><small>Montant: {{ accountingAmplitudeSansCarthagoAmount | number : '1.0-2' }}</small></article>
           <article class="dashboard-kpi-tile accounting-total"><span class="label">Total Carthago alloue {{ accountingOperatorLabel }}</span><strong>{{ accountingCarthagoRowsCount }}</strong></article>
@@ -781,7 +818,7 @@
             <select [(ngModel)]="accountingStatusFilter">
               <option [ngValue]="'ALL'">Tous</option>
               <option [ngValue]="'COMPTABILISE'">Comptabilise</option>
-              <option [ngValue]="'NON_COMPTABILISE'">Non comptabilise</option>
+              <option [ngValue]="'NON_COMPTABILISE'">EN ATTENTE</option>
               <option [ngValue]="'AMPLITUDE_SANS_CARTHAGO'">AMPLITUDE sans Carthago</option>
               <option [ngValue]="'A_RISQUE'">A risque</option>
             </select>
@@ -798,7 +835,7 @@
             <small>Montant: {{ accountingCarthagoRowsAmount | number : '1.0-2' }}</small>
           </article>
           <article class="dashboard-kpi-tile kpi-soft-green">
-            <span class="label">Operations comptabilisees</span>
+            <span class="label">Operations comptabilisées</span>
             <strong>{{ comptabiliseCount }}</strong>
             <small>Montant: {{ accountingComptabiliseAmount | number : '1.0-2' }}</small>
           </article>
@@ -839,7 +876,7 @@
                 <span class="status-pill" [ngClass]="statusClass(row.status)"><span class="status-icon">{{ statusIcon(row.status) }}</span>{{ statusLabel(row.status) }}</span>
               </td>
             </tr>
-            <tr *ngIf="filteredAccountingRows.length === 0"><td colspan="12">Aucune donnee sur la periode.</td></tr>
+            <tr *ngIf="filteredAccountingRows.length === 0"><td colspan="12">Aucune donnee sur la période.</td></tr>
             </tbody>
           </table>
         </div>
@@ -852,7 +889,7 @@
           <table>
             <thead>
             <tr>
-              <th>Date</th><th>Total operations</th><th>Montant Carthago</th><th>Comptabilisees</th><th>Montant comptabilise</th><th>Non comptabilisees</th><th>Montant non comptabilise</th><th>Montant a risque</th><th>Taux comptabilisation</th><th>Actions</th>
+              <th>Date</th><th>Total operations</th><th>Montant Carthago</th><th>Comptabilisees</th><th>Montant comptabilise</th><th>EN ATTENTE</th><th>Montant non comptabilise</th><th>Montant a risque</th><th>Taux comptabilisation</th><th>Actions</th>
             </tr>
             </thead>
             <tbody>
@@ -881,6 +918,69 @@
           <button class="page-btn" (click)="goTablePage('accounting-history', accountingHistoryRows, tablePage('accounting-history') + 1)" [disabled]="tablePage('accounting-history') >= tableTotalPages(accountingHistoryRows)">Suivant</button>
         </div>
       </section>
+
+      <section class="card result-card admin-users-page" *ngIf="activePage === 'ADMIN_USERS' && isAdmin">
+        <h2>Utilisateurs</h2>
+        <div class="filters-panel">
+          <div class="filters-head">
+            <h3>{{ adminEditingUserId ? 'Modifier un utilisateur' : 'Nouvel utilisateur' }}</h3>
+            <button class="ghost" type="button" (click)="resetAdminUserForm()">Nouveau</button>
+          </div>
+          <div class="filters-grid">
+            <label class="filter-field">Nom <input type="text" [(ngModel)]="adminUserForm.nom" /></label>
+            <label class="filter-field">Prenom <input type="text" [(ngModel)]="adminUserForm.prenom" /></label>
+            <label class="filter-field">Email / identifiant <input type="email" [(ngModel)]="adminUserForm.email" /></label>
+            <label class="filter-field">Telephone <input type="text" [(ngModel)]="adminUserForm.telephone" /></label>
+            <label class="filter-field">Profil
+              <select [(ngModel)]="adminUserForm.profile">
+                <option [ngValue]="'AGENT'">AGENT</option>
+                <option [ngValue]="'ADMIN'">ADMIN</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button class="primary" type="button" (click)="saveAdminUser()" [disabled]="adminUserLoading">{{ adminEditingUserId ? 'Enregistrer' : 'Creer le compte' }}</button>
+            <button class="secondary" type="button" (click)="loadAdminUsers()" [disabled]="adminUserLoading">Actualiser</button>
+          </div>
+          <div class="retention-result" *ngIf="generatedTemporaryPassword">
+            <small>Mot de passe temporaire a communiquer: <b>{{ generatedTemporaryPassword }}</b></small>
+          </div>
+        </div>
+        <div class="table-tools">
+          <label class="search">Recherche <input type="text" [(ngModel)]="adminUserSearch" placeholder="Nom, email, telephone..." /></label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr>
+              <th>Utilisateur</th><th>Email</th><th>Telephone</th><th>Profil</th><th>Statut</th><th>Derniere connexion</th><th>Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr *ngFor="let user of filteredAdminUsers">
+              <td>{{ user.prenom }} {{ user.nom }}</td>
+              <td>{{ user.email || user.username }}</td>
+              <td>{{ user.telephone || '-' }}</td>
+              <td><span class="status-pill neutral">{{ user.profile || '-' }}</span></td>
+              <td>
+                <span class="status-pill" [ngClass]="user.locked ? 'ko' : user.activated ? 'ok' : 'warn'">
+                  {{ user.locked ? 'Verrouille' : user.activated ? (user.passwordResetRequired ? 'Mot de passe temporaire' : 'Actif') : 'Desactive' }}
+                </span>
+              </td>
+              <td>{{ user.lastConnexionDate || '-' }}</td>
+              <td class="admin-actions">
+                <button class="secondary" type="button" (click)="editAdminUser(user)">Modifier</button>
+                <button class="primary" type="button" *ngIf="!user.activated" (click)="activateAdminUser(user)">Activer</button>
+                <button class="orange" type="button" *ngIf="user.activated" (click)="disableAdminUser(user)">Desactiver</button>
+                <button class="secondary" type="button" *ngIf="user.locked" (click)="unlockAdminUser(user)">Deverrouiller</button>
+                <button class="ghost" type="button" (click)="resetAdminPassword(user)">Reset MDP</button>
+              </td>
+            </tr>
+            <tr *ngIf="filteredAdminUsers.length === 0"><td colspan="7">Aucun utilisateur.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </main>
 </div>
@@ -905,7 +1005,7 @@
           <div class="step-content">
             <h3>Contexte de rapprochement</h3>
             <div class="upload-form-grid">
-              <label>Date des operations a rapprocher <input type="date" [(ngModel)]="businessDate" /></label>
+              <label>Date des operations à rapprocher <input type="date" [(ngModel)]="businessDate" /></label>
               <label>Libelle du run <input type="text" [(ngModel)]="runLabel" placeholder="RUN-YYYY-MM-DD" /></label>
             </div>
             <div class="context-summary">

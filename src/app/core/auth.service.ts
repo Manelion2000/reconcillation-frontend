@@ -13,6 +13,7 @@ export interface JwtTokenResponse {
   date?: string;
   access_token: string;
   expires_in: number;
+  passwordResetRequired?: boolean;
 }
 
 export interface CurrentUser {
@@ -22,6 +23,10 @@ export interface CurrentUser {
   prenom?: string;
   email?: string;
   libelleProfil?: string;
+  activated?: boolean;
+  locked?: boolean;
+  passwordResetRequired?: boolean;
+  roles?: Array<{ id?: string; code?: string; libelle?: string }>;
 }
 
 export interface RegisterPayload {
@@ -77,6 +82,20 @@ export class AuthService {
       return JSON.parse(raw) as CurrentUser;
     } catch {
       return null;
+    }
+  }
+
+  authorities(): string[] {
+    const token = this.token();
+    if (!token) return [];
+    const parts = token.split('.');
+    if (parts.length < 2) return [];
+    try {
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      const raw = String(payload.auth ?? '');
+      return raw.split(',').map((value) => value.trim()).filter(Boolean);
+    } catch {
+      return [];
     }
   }
 

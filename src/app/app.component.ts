@@ -23,6 +23,8 @@ import {
   CompensationDaily, CompensationPeriodResponse, CompensationDiscrepancy,
   AccountingCheckRow,
   AccountingKpi,
+  AdminUser,
+  AdminUserPayload,
   AmplitudeCleanupResult,
   FileImport,
   ReconciliationResult,
@@ -35,7 +37,7 @@ import {
 type OperatorType = 'MOOV' | 'ORANGE';
 type ImportSourceType = 'BANQUE' | 'MOOV' | 'ORANGE' | 'AMPLITUDE';
 type KpiTone = 'kpi-soft-green' | 'kpi-soft-yellow' | 'kpi-soft-orange' | 'kpi-soft-red';
-type PageType = 'DASHBOARD' | 'HISTORIQUE' | 'RECONCILIATION' | 'COMPENSATION' | 'ACCOUNTING';
+type PageType = 'DASHBOARD' | 'HISTORIQUE' | 'RECONCILIATION' | 'COMPENSATION' | 'ACCOUNTING' | 'ADMIN_USERS';
 
 interface KpiTile {
   label: string;
@@ -96,6 +98,12 @@ export class AppComponent implements OnInit {
   registerMessage = '';
   registerError = '';
   currentUser: CurrentUser | null = null;
+  passwordResetRequired = false;
+  currentPassword = '';
+  newPassword = '';
+  confirmNewPassword = '';
+  passwordChangeLoading = false;
+  passwordChangeError = '';
   activePage: PageType = 'DASHBOARD';
   businessDate = new Date().toISOString().slice(0, 10);
   dateFrom = '';
@@ -148,6 +156,12 @@ export class AppComponent implements OnInit {
   amplitudeCleanupDateFrom = new Date().toISOString().slice(0, 10);
   amplitudeCleanupDateTo = new Date().toISOString().slice(0, 10);
   amplitudeCleanupResult?: AmplitudeCleanupResult;
+  adminUsers: AdminUser[] = [];
+  adminUserForm: AdminUserPayload = { nom: '', prenom: '', email: '', telephone: '', profile: 'AGENT' };
+  adminEditingUserId: string | null = null;
+  adminUserSearch = '';
+  adminUserLoading = false;
+  generatedTemporaryPassword = '';
 
   loading = false;
   message = '';
@@ -263,10 +277,25 @@ export class AppComponent implements OnInit {
     this.loadRuns();
     this.loadSummaryAndResults();
     this.loadDashboardData();
+    if (this.activePage === 'ADMIN_USERS') {
+      this.loadAdminUsers();
+    }
   }
 
   get isAuthenticated(): boolean {
     return this.auth.isAuthenticated();
+  }
+
+  get isAdmin(): boolean {
+    const roles = this.currentUser?.roles ?? [];
+    const authorities = this.auth.authorities();
+    const profile = String(this.currentUser?.libelleProfil ?? '').trim().toUpperCase();
+    return profile === 'ADMIN'
+      || roles.some((role) =>
+        String(role.code ?? '').trim().toUpperCase() === 'BA_ADMIN'
+        || String(role.libelle ?? '').trim().toUpperCase() === 'ADMIN'
+      )
+      || authorities.includes('BA_ADMIN');
   }
 
   login(): void {
@@ -281,9 +310,10 @@ export class AppComponent implements OnInit {
       password: this.loginPassword,
       rememberMe: this.loginRememberMe
     }).subscribe({
-      next: () => {
+      next: (response) => {
         this.loginPassword = '';
         this.loginLoading = false;
+        this.passwordResetRequired = Boolean(response.passwordResetRequired);
         this.currentUser = this.auth.currentUser();
         this.refreshCurrentUser();
         this.quickFilters = [
@@ -351,7 +381,10 @@ export class AppComponent implements OnInit {
 
   private refreshCurrentUser(): void {
     this.auth.loadCurrentUser().subscribe({
-      next: (user) => this.currentUser = user,
+      next: (user) => {
+        this.currentUser = user;
+        this.passwordResetRequired = Boolean(user?.passwordResetRequired);
+      },
       error: () => this.currentUser = this.auth.currentUser()
     });
   }
@@ -382,7 +415,9 @@ export class AppComponent implements OnInit {
             ? '/reconciliation'
             : page === 'COMPENSATION'
               ? '/compensation'
-              : '/accounting'
+              : page === 'ACCOUNTING'
+                ? '/accounting'
+                : '/administration/users'
     );
     if (page === 'DASHBOARD') {
       this.loadDashboardData();
@@ -397,6 +432,9 @@ export class AppComponent implements OnInit {
     }
     if (page === 'ACCOUNTING') {
       this.loadAccountingCheck();
+    }
+    if (page === 'ADMIN_USERS' && this.isAdmin) {
+      this.loadAdminUsers();
     }
   }
 
@@ -447,10 +485,15 @@ export class AppComponent implements OnInit {
       this.activePage = 'ACCOUNTING';
       return;
     }
+    if (path.endsWith('/administration/users')) {
+      this.showHome = false;
+      this.activePage = 'ADMIN_USERS';
+      return;
+    }
     this.showHome = true;
   }
 
-  private pushPath(path: '/home' | '/dashboard' | '/historique-reconciliations' | '/reconciliation' | '/compensation' | '/accounting'): void {
+  private pushPath(path: '/home' | '/dashboard' | '/historique-reconciliations' | '/reconciliation' | '/compensation' | '/accounting' | '/administration/users'): void {
     if (this.router.url === path) {
       return;
     }
@@ -475,6 +518,121 @@ export class AppComponent implements OnInit {
   }
   onAmplitudeFile(event: Event): void {
     this.amplitudeFiles = this.filesFromEvent(event);
+  }
+
+  changeRequiredPassword(): void {
+    if (!this.currentPassword || !this.newPassword || !this.confirmNewPassword) {
+      this.passwordChangeError = 'Veuillez renseigner les trois champs.';
+      return;
+    }
+    if (this.newPassword !== this.confirmNewPassword) {
+      this.passwordChangeError = 'La confirmation ne correspond pas au nouveau mot de passe.';
+      return;
+    }
+    this.passwordChangeLoading = true;
+    this.passwordChangeError = '';
+    this.api.changeOwnPassword({
+      ancien: this.currentPassword,
+      nouveau: this.newPassword,
+      confirmer: this.confirmNewPassword
+    }).subscribe({
+      next: () => {
+        this.passwordChangeLoading = false;
+        this.passwordResetRequired = false;
+        this.currentPassword = '';
+        this.newPassword = '';
+        this.confirmNewPassword = '';
+        this.refreshCurrentUser();
+      },
+      error: (err) => {
+        this.passwordChangeLoading = false;
+        this.passwordChangeError = err?.error?.message || err?.error || 'Changement de mot de passe impossible.';
+      }
+    });
+  }
+
+  loadAdminUsers(): void {
+    if (!this.isAdmin) {
+      return;
+    }
+    this.adminUserLoading = true;
+    this.api.getAdminUsers().subscribe({
+      next: (users) => {
+        this.adminUsers = users ?? [];
+        this.adminUserLoading = false;
+      },
+      error: (err) => {
+        this.adminUserLoading = false;
+        this.openDialog('error', 'Administration', err?.error?.message || 'Chargement des utilisateurs impossible.');
+      }
+    });
+  }
+
+  saveAdminUser(): void {
+    if (!this.adminUserForm.nom || !this.adminUserForm.prenom || !this.adminUserForm.email || !this.adminUserForm.telephone) {
+      this.openDialog('error', 'Validation', 'Veuillez renseigner le nom, le prenom, l email et le telephone.');
+      return;
+    }
+    this.adminUserLoading = true;
+    this.generatedTemporaryPassword = '';
+    const request$ = this.adminEditingUserId
+      ? this.api.updateAdminUser(this.adminEditingUserId, this.adminUserForm)
+      : this.api.createAdminUser(this.adminUserForm);
+    request$.subscribe({
+      next: (user) => {
+        this.adminUserLoading = false;
+        this.generatedTemporaryPassword = user.temporaryPassword || '';
+        this.resetAdminUserForm();
+        this.loadAdminUsers();
+        const message = this.generatedTemporaryPassword
+          ? `Compte cree. Mot de passe temporaire: ${this.generatedTemporaryPassword}`
+          : 'Utilisateur enregistre.';
+        this.openDialog('success', 'Administration utilisateurs', message);
+      },
+      error: (err) => {
+        this.adminUserLoading = false;
+        this.openDialog('error', 'Administration utilisateurs', err?.error?.message || err?.error || 'Enregistrement impossible.');
+      }
+    });
+  }
+
+  editAdminUser(user: AdminUser): void {
+    this.adminEditingUserId = user.id;
+    this.adminUserForm = {
+      nom: user.nom || '',
+      prenom: user.prenom || '',
+      email: user.email || user.username || '',
+      telephone: user.telephone || '',
+      profile: user.profile === 'ADMIN' ? 'ADMIN' : 'AGENT'
+    };
+  }
+
+  resetAdminUserForm(): void {
+    this.adminEditingUserId = null;
+    this.adminUserForm = { nom: '', prenom: '', email: '', telephone: '', profile: 'AGENT' };
+  }
+
+  activateAdminUser(user: AdminUser): void {
+    this.api.activateAdminUser(user.id).subscribe({ next: () => this.loadAdminUsers() });
+  }
+
+  disableAdminUser(user: AdminUser): void {
+    this.api.disableAdminUser(user.id).subscribe({ next: () => this.loadAdminUsers() });
+  }
+
+  unlockAdminUser(user: AdminUser): void {
+    this.api.unlockAdminUser(user.id).subscribe({ next: () => this.loadAdminUsers() });
+  }
+
+  resetAdminPassword(user: AdminUser): void {
+    this.api.resetAdminUserPassword(user.id).subscribe({
+      next: (response) => {
+        this.generatedTemporaryPassword = response.temporaryPassword;
+        this.openDialog('info', 'Mot de passe temporaire', `${response.username}: ${response.temporaryPassword}`);
+        this.loadAdminUsers();
+      },
+      error: (err) => this.openDialog('error', 'Reset mot de passe', err?.error?.message || 'Reset impossible.')
+    });
   }
 
   importBankOnly(): void {
@@ -1490,6 +1648,14 @@ export class AppComponent implements OnInit {
       || direction.includes('VERS BANQUE');
   }
 
+  private isSoldeInsuffisantReason(reason?: string | null): boolean {
+    return (reason ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .includes('solde insuffisant');
+  }
+
   get kpiScopeLabel(): string {
     if (this.appliedPeriodMode === 'SINGLE_DAY' && this.appliedSingleDay) return `Jour transaction: ${this.appliedSingleDay}`;
     if (this.appliedPeriodMode === 'RANGE' && this.appliedDateFrom && this.appliedDateTo) return `Periode transaction: ${this.appliedDateFrom} -> ${this.appliedDateTo}`;
@@ -1759,6 +1925,15 @@ export class AppComponent implements OnInit {
   get totalResults(): number {
     if (!this.summary) return 0;
     return this.summary.totalMatchOk + (this.summary.totalEchecDesDeuxCotes ?? 0) + this.summary.totalDebitATort + this.summary.totalCreditSansDebit + this.summary.totalAbsentBanque + this.summary.totalAbsentMoov + this.summary.totalMontantDifferent + this.summary.totalDoublons;
+  }
+
+  get filteredAdminUsers(): AdminUser[] {
+    const q = this.adminUserSearch.trim().toLowerCase();
+    if (!q) return this.adminUsers;
+    return this.adminUsers.filter((user) =>
+      [user.nom, user.prenom, user.email, user.username, user.telephone, user.profile]
+        .some((value) => String(value ?? '').toLowerCase().includes(q))
+    );
   }
 
   get successRate(): number {
@@ -2124,7 +2299,7 @@ export class AppComponent implements OnInit {
       return [];
     }
     const s = this.dashboardSummary;
-    return [
+    const tiles: KpiTile[] = [
       { label: 'Transactions Banque', value: s.totalBank, tone: 'kpi-soft-green' },
       { label: `Transactions ${this.activeOperatorLabel}`, value: s.totalOperator, tone: 'kpi-soft-yellow' },
       { label: 'Matching Rate', value: this.formatPercent(s.matchingRate), tone: 'kpi-soft-green' },
@@ -2135,6 +2310,15 @@ export class AppComponent implements OnInit {
       { label: 'Montant Anomalies', value: this.formatAmount(s.montantAnomalies), tone: 'kpi-soft-orange' },
       { label: 'Ecart aboutis', value: this.formatAmount(s.ecartGlobal), tone: 'kpi-soft-red' }
     ];
+    if (this.selectedOperator === 'MOOV' && s.moovClosingBalance != null) {
+      tiles.splice(2, 0, {
+        label: 'Balance Moov',
+        value: this.formatAmount(s.moovClosingBalance),
+        tone: 'kpi-soft-green',
+        hint: 'Derniere balance de la periode'
+      });
+    }
+    return tiles;
   }
 
   get reportingKpiTiles(): KpiTile[] {
@@ -2158,6 +2342,9 @@ export class AppComponent implements OnInit {
       const operatorSuccessWithoutCarthagoAmount = operatorSuccessWithoutCarthagoRows.reduce((sum, row) => sum + Number(row.operatorAmount ?? 0), 0);
       const operatorSuccessCount = completedRows.length + operatorSuccessWithoutCarthagoRows.length;
       const operatorSuccessAmount = completedOperatorSuccessAmount + operatorSuccessWithoutCarthagoAmount;
+      const soldeInsuffisantRows = rows.filter((row) => this.isSoldeInsuffisantReason(row.reason));
+      const soldeInsuffisantAmount = soldeInsuffisantRows.reduce((sum, row) => sum + Number(row.bankAmount ?? 0), 0);
+      const soldeInsuffisantRate = anomalyRows.length ? (soldeInsuffisantRows.length * 100) / anomalyRows.length : 0;
       const anomalyAmount = anomalyRows.reduce((sum, row) => {
         if (row.amountDifference != null) return sum + Math.abs(Number(row.amountDifference));
         if (row.bankAmount != null && row.operatorAmount != null) return sum + Math.abs(Number(row.bankAmount) - Number(row.operatorAmount));
@@ -2193,6 +2380,12 @@ export class AppComponent implements OnInit {
           value: anomalyRows.length,
           tone: 'kpi-soft-orange',
           hint: `Montant: ${this.formatAmount(anomalyAmount)}`
+        },
+        {
+          label: 'Solde insuffisant',
+          value: soldeInsuffisantRows.length,
+          tone: 'kpi-soft-red',
+          hint: `${this.formatAmount(soldeInsuffisantAmount)} - ${this.formatPercent(soldeInsuffisantRate)} des anomalies`
         },
         {
           label: 'Debit a tort',
@@ -2245,6 +2438,12 @@ export class AppComponent implements OnInit {
         value: r.anomalyCount,
         tone: 'kpi-soft-orange',
         hint: `Montant: ${this.formatAmount(r.montantAnomalies)}`
+      },
+      {
+        label: 'Solde insuffisant',
+        value: r.soldeInsuffisantCount ?? 0,
+        tone: 'kpi-soft-red',
+        hint: `${this.formatAmount(r.soldeInsuffisantAmount ?? 0)} - ${this.formatPercent(r.soldeInsuffisantRate ?? 0)} des anomalies`
       },
       { label: 'Debit a tort', value: r.debitATortCount, tone: 'kpi-soft-orange' },
       {
@@ -2695,6 +2894,35 @@ export class AppComponent implements OnInit {
       return this.compensationPeriod.totalDifference;
     }
     return this.activeCompensationRows.reduce((sum, row) => sum + Number(row.difference ?? 0), 0);
+  }
+
+  get compensationMoovClosingBalance(): number | null {
+    if (this.selectedOperator !== 'MOOV') {
+      return null;
+    }
+    if (this.compensationOperationFilter === 'ALL' && this.compensationPeriod?.moovClosingBalance != null) {
+      return this.compensationPeriod.moovClosingBalance;
+    }
+    const rowsWithBalance = this.activeCompensationRows.filter((row) => row.moovClosingBalance != null);
+    return rowsWithBalance.length ? Number(rowsWithBalance[rowsWithBalance.length - 1].moovClosingBalance) : null;
+  }
+
+  get compensationReconciliationBalance(): number {
+    const matchRows = this.compensationResultRows.filter((row) => row.resultType === 'MATCH_OK');
+    const bankToWalletAmount = matchRows
+      .filter((row) => this.resolveOperationType(row) === 'BANK_TO_WALLET')
+      .reduce((sum, row) => sum + Number(row.bankAmount ?? 0), 0);
+    const walletToBankAmount = matchRows
+      .filter((row) => this.resolveOperationType(row) === 'WALLET_TO_BANK')
+      .reduce((sum, row) => sum + Number(row.moovAmount ?? 0), 0);
+    return bankToWalletAmount - walletToBankAmount;
+  }
+
+  get compensationReconciliationBalanceHint(): string {
+    const matchRows = this.compensationResultRows.filter((row) => row.resultType === 'MATCH_OK');
+    const bankToWalletCount = matchRows.filter((row) => this.resolveOperationType(row) === 'BANK_TO_WALLET').length;
+    const walletToBankCount = matchRows.filter((row) => this.resolveOperationType(row) === 'WALLET_TO_BANK').length;
+    return `${bankToWalletCount} tx Banque -> Wallet / ${walletToBankCount} tx Wallet -> Banque`;
   }
 
   get compensationDecision(): string {

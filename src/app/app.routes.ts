@@ -8,5 +8,6 @@ export const routes: Routes = [
   { path: 'reconciliation', children: [] },
   { path: 'compensation', children: [] },
   { path: 'accounting', children: [] },
+  { path: 'administration/users', children: [] },
   { path: '**', redirectTo: 'home' }
 ];

@@ -123,6 +123,7 @@ export interface MoovTransaction {
   transactionStatusRaw?: string | null;
   transactionType?: 'BANK_TO_WALLET' | 'WALLET_TO_BANK' | 'BANK_TO_MOOV' | 'MOOV_TO_BANK' | string | null;
   amount?: number | null;
+  balance?: number | null;
   completionTime?: string | null;
   msisdn?: string | null;
 }
@@ -190,6 +191,7 @@ export interface DashboardSummary {
   montantGlobalOperateur: number;
   montantAnomalies: number;
   ecartGlobal: number;
+  moovClosingBalance?: number | null;
 }
 
 export type DashboardResultTypeView =
@@ -273,6 +275,9 @@ export interface ReportingKpis {
   operateurSuccessSansCarthagoAmount: number;
   operateurHorsPerimetreCount: number;
   operateurHorsPerimetreAmount: number;
+  soldeInsuffisantCount: number;
+  soldeInsuffisantAmount: number;
+  soldeInsuffisantRate: number;
   moyenneJournaliereTransactions: number;
   picVolumeJournalier: {
     businessDate?: string | null;
@@ -326,6 +331,7 @@ export interface CompensationDaily {
   bankSuccessAmount: number;
   difference: number;
   decision: 'OK_COMPENSATION' | 'A_VERIFIER' | string;
+  moovClosingBalance?: number | null;
 }
 
 export interface CompensationPeriodResponse {
@@ -338,6 +344,7 @@ export interface CompensationPeriodResponse {
   totalBankSuccessAmount: number;
   totalDifference: number;
   decision: 'OK_COMPENSATION' | 'A_VERIFIER' | string;
+  moovClosingBalance?: number | null;
 }
 
 export interface CompensationDiscrepancy {
@@ -397,4 +404,35 @@ export interface AccountingKpi {
   absoluteGapAmount: number;
   transactionsWithGapCount: number;
   totalGapAmount: number;
+}
+
+export type UserProfile = 'ADMIN' | 'AGENT';
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  nom?: string | null;
+  prenom?: string | null;
+  email?: string | null;
+  telephone?: string | null;
+  profile?: UserProfile | string | null;
+  activated: boolean;
+  locked: boolean;
+  passwordResetRequired: boolean;
+  lastConnexionDate?: string | null;
+  temporaryPassword?: string | null;
+}
+
+export interface AdminUserPayload {
+  nom: string;
+  prenom: string;
+  email: string;
+  telephone: string;
+  profile: UserProfile;
+}
+
+export interface AdminPasswordResetResponse {
+  userId: string;
+  username: string;
+  temporaryPassword: string;
 }

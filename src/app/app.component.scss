@@ -3072,3 +3072,15 @@ label {
 .danger-text {
   color: #be2a2a;
 }
+
+.admin-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-actions button {
+  min-height: 30px;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
